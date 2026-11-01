@@ -12,7 +12,7 @@ For every PDF in a folder it:
   6. writes  <out>/<name>.json  (machine-readable, used by the chunker in step 1)
      and     <out>/<name>.txt   (human-readable, for you to eyeball).
 
-Works on Python 3.9+ (tested in CI on 3.9, 3.11, 3.13; Windows / Linux / macOS).
+Works on Python 3.11+ (tested in CI on 3.11, 3.13, 3.14; Windows / Linux / macOS).
 
 Install:   pip install -r requirements.txt
 Run:       python parse_pdfs.py --pdf-dir pdfs --csv pdfs/csv-alzheimer.csv --out parsed --limit 3

@@ -139,7 +139,7 @@ Things that only showed up by measuring, and what was done about them:
 
 ## Build and run
 
-Requirements: Python 3.9+ (3.11 recommended), [Docker Desktop](https://www.docker.com/products/docker-desktop/),
+Requirements: Python 3.11+, [Docker Desktop](https://www.docker.com/products/docker-desktop/),
 and either [LM Studio](https://lmstudio.ai/) with a chat model or a
 [Gemini API key](https://aistudio.google.com/apikey).
 Commands below are for Windows (Anaconda Prompt); on macOS/Linux use `cp` instead of `copy`.
@@ -188,12 +188,12 @@ page numbers and a reference list), the chunker (size cap with overlap, front-ma
 boilerplate filtering, paragraphs split across pages), citation parsing, the LLM client, the
 evaluator's scoring, the API endpoints and error codes, and the format of
 `eval_questions.jsonl`. They need no database, LLM, embedding model or PDFs - those are faked -
-so [GitHub Actions](.github/workflows/ci.yml) runs them with ruff on Python 3.9, 3.11 and 3.13
+so [GitHub Actions](.github/workflows/ci.yml) runs them with ruff on Python 3.11, 3.13 and 3.14
 for every push and pull request. Several tests pin down bugs found during development (e.g.
 two-column pages read out of order, heading-less papers losing their main text).
 
 PyMuPDF is pinned to the version that produced the published results; with it, the pipeline
-reproduces the same chunks byte for byte on Python 3.13.
+reproduces the same chunks byte for byte on Python 3.13 and 3.14.
 
 ### API
 
@@ -328,7 +328,7 @@ Roadmap:
 ├── evaluate.py            evaluation runner
 ├── eval_questions.jsonl   15 test questions with expected answers and evidence passages
 ├── tests/                 pytest suite (no database / LLM / model needed)
-├── .github/workflows/     CI: ruff + pytest on Python 3.9, 3.11, 3.13
+├── .github/workflows/     CI: ruff + pytest on Python 3.11, 3.13, 3.14
 ├── results/               evaluation outputs (all answers, per-question scores)
 ├── docs/images/           screenshots used in this README
 ├── docker-compose.yml     Postgres 16 + pgvector

@@ -22,7 +22,7 @@ How chunks are built:
   * consecutive chunks of the same section share the last ~--overlap-words words,
   * tiny leftovers are merged into the previous chunk (if that stays under the cap) or dropped.
 
-Works on Python 3.9+ (tested in CI on 3.9, 3.11, 3.13).
+Works on Python 3.11+ (tested in CI on 3.11, 3.13, 3.14).
 Run:  python chunk_docs.py --parsed parsed --out chunks.jsonl
 """
 import argparse

@@ -18,7 +18,7 @@ Run:  python answer.py "Which variants' effects depend on APOE e4?"
       python answer.py --list-models
       python answer.py "..." --json          (machine-readable, for the evaluation script)
 
-Python 3.9+ (tested in CI on 3.9, 3.11, 3.13). Uses plain `requests` (no vendor SDK).
+Python 3.11+ (tested in CI on 3.11, 3.13, 3.14). Uses plain `requests` (no vendor SDK).
 """
 import argparse
 import json
