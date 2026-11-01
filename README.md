@@ -183,7 +183,7 @@ ruff check .
 pytest
 ```
 
-90 tests cover the parser (including a PDF generated on the fly with a running header,
+110 tests cover the parser (including a PDF generated on the fly with a running header,
 page numbers and a reference list), the chunker (size cap with overlap, front-matter and
 boilerplate filtering, paragraphs split across pages), citation parsing, the LLM client, the
 evaluator's scoring, the API endpoints and error codes, and the format of
@@ -326,7 +326,7 @@ Roadmap:
 ├── answer.py              retrieval + LLM answer with citations (+ CLI)
 ├── api.py                 FastAPI app
 ├── evaluate.py            evaluation runner
-├── eval_questions.jsonl   15 test questions with expected answers and evidence passages
+├── eval_questions.jsonl   30 test questions with expected answers and evidence passages
 ├── tests/                 pytest suite (no database / LLM / model needed)
 ├── .github/workflows/     CI: ruff + pytest on Python 3.11, 3.13, 3.14
 ├── results/               evaluation outputs (all answers, per-question scores)

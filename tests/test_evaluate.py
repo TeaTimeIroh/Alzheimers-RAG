@@ -96,3 +96,40 @@ def test_summary_counts_per_type():
     assert s["lookup"]["hit@5"] == 2 and s["lookup"]["hit@1"] == 1
     assert s["lookup"]["MRR"] == 0.75 and s["lookup"]["correct"] == 1 and s["lookup"]["wrong"] == 1
     assert s["unanswerable"]["correct"] == 1
+
+
+# ----------------------------------------------------------------------------- multi-paper
+MULTI = {"id": "M1", "type": "multi", "question": "Which tracer did both studies use?",
+         "expected": "florbetapir", "doc_ids": ["a", "b"], "must_include": [["florbetapir"]],
+         "evidence_all": [["completed florbetapir PET"], ["utilized Florbetapir (AV45)"]]}
+MULTI_ROWS = [
+    ("a:0006", "A", "2023", "Methods", 2, 2, "All participants completed florbetapir PET.", 0.80),
+    ("x:0001", "X", "2020", "Intro", 1, 1, "Unrelated text.", 0.79),
+    ("b:0007", "B", "2025", "Methods", 3, 3, "we utilized Florbetapir (AV45) for ADNI.", 0.78),
+]
+
+
+@pytest.fixture
+def multi_search(monkeypatch):
+    import search
+    monkeypatch.setattr(search, "search", lambda q, model, conn, k: MULTI_ROWS[:k])
+
+
+def test_multi_needs_every_part_retrieved(multi_search):
+    complete = evaluate.run_one(MULTI, None, None, top_k=3, llm_model=None, retrieval_only=True)
+    assert complete["hit_rank"] == 3 and complete["parts_found"] == "2/2"   # rank of the last part
+    partial = evaluate.run_one(MULTI, None, None, top_k=2, llm_model=None, retrieval_only=True)
+    assert partial["hit_rank"] is None and partial["parts_found"] == "1/2"
+
+
+@pytest.mark.parametrize("cited, cited_gold", [([1, 3], True), ([1], False), ([2], False)])
+def test_multi_must_cite_a_source_for_each_part(monkeypatch, multi_search, cited, cited_gold):
+    text = "Both used florbetapir " + "".join("[{}]".format(n) for n in cited) + "."
+    monkeypatch.setattr(answer, "ask", fake_ask(text, cited))
+    res = evaluate.run_one(MULTI, None, None, top_k=3, llm_model="fake", retrieval_only=False)
+    assert res["verdict"] == "correct" and res["cited_gold"] is cited_gold
+
+
+def test_single_evidence_question_has_no_parts_field(fake_search):
+    res = evaluate.run_one(QUESTION, None, None, top_k=2, llm_model=None, retrieval_only=True)
+    assert "parts_found" not in res

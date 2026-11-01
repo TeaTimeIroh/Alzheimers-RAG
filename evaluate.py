@@ -9,6 +9,9 @@ For every question in eval_questions.jsonl it runs the full pipeline (retrieve -
              refused - the model said it could not find the answer although it was retrievable
   citation   cited the right source - one of the [n] the answer cites contains the evidence
   unanswerable       - correct only if the model refuses ("I could not find this...")
+  multi              - questions whose answer needs passages from several papers
+                       (`evidence_all`): retrieved only when ALL of them are in the top k,
+                       and the answer must cite a source for each of them
 
 Results are printed per question and per question type, and saved to results/ as JSON (with
 the full answers, for manual review) so different models / settings can be compared.
@@ -35,7 +38,7 @@ from typing import Dict, List, Optional
 
 import answer                                   # loads .env, LLM client, ask()
 
-TYPES = ("finding", "lookup", "unanswerable")
+TYPES = ("finding", "lookup", "multi", "unanswerable")
 
 
 # ----------------------------------------------------------------------------- matching
@@ -64,12 +67,21 @@ def score_answer(ans: str, groups: List[List[str]]) -> int:
     return sum(1 for g in groups if any(re.search(p, a) for p in g))
 
 
+def evidence_parts(q: dict) -> list:
+    """The passages a question needs: one part (`evidence`) for most questions, several parts
+    (`evidence_all`, e.g. one per paper) for questions that combine papers. Each part is a
+    passage or a list of alternative passages."""
+    if q.get("evidence_all"):
+        return list(q["evidence_all"])
+    return [q["evidence"]] if q.get("evidence") else []
+
+
 def is_gold(chunk: dict, q: dict) -> bool:
-    """Does this retrieved chunk contain the answer, i.e. one of the passages listed under
-    `evidence`? The list is curated by hand: papers repeat a result in the abstract, results
-    and discussion in different words, so a 'miss' may be a passage that isn't listed yet -
+    """Does this retrieved chunk contain (part of) the answer, i.e. one of the listed passages?
+    The lists are curated by hand: papers repeat a result in the abstract, results and
+    discussion in different words, so a 'miss' may be a passage that isn't listed yet -
     check the retrieved chunks before believing it, and add the passage if it really answers."""
-    return contains_evidence(chunk["text"], q.get("evidence"))
+    return any(contains_evidence(chunk["text"], part) for part in evidence_parts(q))
 
 
 # ----------------------------------------------------------------------------- one question
@@ -85,9 +97,14 @@ def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
                       retrieved=[r["chunk_id"] for r in retrieved],
                       seconds_retrieval=round(time.time() - t0, 2))
 
-    gold = [r for r in retrieved if is_gold(r, q)]
-    res["hit_rank"] = gold[0]["n"] if gold else None           # None = answer not retrieved
-    gold_ns = {r["n"] for r in gold}
+    parts = evidence_parts(q)
+    # for each required part: the ranks of the retrieved chunks that contain it
+    part_ns = [{r["n"] for r in retrieved if contains_evidence(r["text"], part)} for part in parts]
+    found = all(part_ns) and bool(parts)
+    # rank at which the answer is complete: the last part to appear (= the only part, usually)
+    res["hit_rank"] = max(min(ns) for ns in part_ns) if found else None
+    if len(parts) > 1:
+        res["parts_found"] = "{}/{}".format(sum(bool(ns) for ns in part_ns), len(parts))
 
     if retrieval_only:
         return res
@@ -104,10 +121,10 @@ def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
     groups = q["must_include"]
     matched = score_answer(ans, groups)
     res["facts_matched"] = "{}/{}".format(matched, len(groups))
-    # the answer must cite a source that actually contains the answer
-    res["cited_gold"] = any(n in gold_ns for n in result["cited"])
+    # the answer must cite, for every required part, a source that contains it
+    res["cited_gold"] = bool(part_ns) and all(any(n in ns for n in result["cited"]) for ns in part_ns)
     if result["not_found"]:
-        res["verdict"] = "refused" if gold else "refused (not retrieved)"
+        res["verdict"] = "refused" if found else "refused (not retrieved)"
     elif matched == len(groups):
         res["verdict"] = "correct"
     elif matched > 0:
