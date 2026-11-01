@@ -327,7 +327,8 @@ above.
 
 This project was built with Claude (Anthropic) as a coding assistant. Claude wrote most of
 the Python code and the first draft of this README, and drafted the 15 evaluation questions
-from the papers, checking each expected answer against the extracted text which was reviewed. 
+from the papers, checking each expected answer against the extracted text;
+I then reviewed the questions, answers and evidence passages.
 I defined the project and its scope, chose the papers, set up and ran the whole stack on my own machine
 (Docker/pgvector, LM Studio, the Gemini API), ran every pipeline step and evaluation, fed the
 outputs and errors back into the iterations, and made the project decisions - removing the
