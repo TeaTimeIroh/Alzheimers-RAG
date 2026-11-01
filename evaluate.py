@@ -119,12 +119,20 @@ def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
         return res
 
     groups = q["must_include"]
-    matched = score_answer(ans, groups)
-    res["facts_matched"] = "{}/{}".format(matched, len(groups))
     # the answer must cite, for every required part, a source that contains it
     res["cited_gold"] = bool(part_ns) and all(any(n in ns for n in result["cited"]) for ns in part_ns)
     if result["not_found"]:
+        # a refusal often explains what it did find ("the sources mention MD, but..."):
+        # those keywords are not an answer, so facts are not scored
+        res["facts_matched"] = "-"
         res["verdict"] = "refused" if found else "refused (not retrieved)"
+        return res
+    matched = score_answer(ans, groups)
+    res["facts_matched"] = "{}/{}".format(matched, len(groups))
+    if matched == len(groups) and not found:
+        # right words, but the passages that support them were not in the context:
+        # guessed or misattributed, so it does not count as correct
+        res["verdict"] = "unsupported"
     elif matched == len(groups):
         res["verdict"] = "correct"
     elif matched > 0:
@@ -163,7 +171,7 @@ def summarise(results: List[dict], top_k: int, retrieval_only: bool) -> Dict[str
             ranks = [1.0 / r["hit_rank"] for r in rs if r["hit_rank"]]
             s["MRR"] = round(sum(ranks) / len(rs), 3)          # mean reciprocal rank
         if not retrieval_only:
-            for v in ("correct", "partial", "wrong", "refused"):
+            for v in ("correct", "unsupported", "partial", "wrong", "refused"):
                 s[v] = sum(r["verdict"].startswith(v) for r in rs)
             if t != "unanswerable":
                 s["cited right source"] = sum(bool(r.get("cited_gold")) for r in rs)

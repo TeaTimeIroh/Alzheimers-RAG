@@ -130,6 +130,23 @@ def test_multi_must_cite_a_source_for_each_part(monkeypatch, multi_search, cited
     assert res["verdict"] == "correct" and res["cited_gold"] is cited_gold
 
 
+def test_right_words_without_retrieved_evidence_are_unsupported(monkeypatch, multi_search):
+    # only paper a is in the top 2: "both used florbetapir" can't be backed by the context
+    monkeypatch.setattr(answer, "ask", fake_ask("Both used florbetapir [1][2].", [1, 2]))
+    res = evaluate.run_one(MULTI, None, None, top_k=2, llm_model="fake", retrieval_only=False)
+    assert res["verdict"] == "unsupported"
+    s = evaluate.summarise([res], top_k=2, retrieval_only=False)
+    assert s["multi"]["unsupported"] == 1 and s["multi"]["correct"] == 0
+
+
+def test_refusal_is_not_scored_for_facts(monkeypatch, multi_search):
+    # a refusal that mentions what it did find must not show "1/1 facts"
+    text = answer.NOT_FOUND + " The sources mention florbetapir for ADNI only [1]."
+    monkeypatch.setattr(answer, "ask", fake_ask(text, [1]))
+    res = evaluate.run_one(MULTI, None, None, top_k=2, llm_model="fake", retrieval_only=False)
+    assert res["verdict"] == "refused (not retrieved)" and res["facts_matched"] == "-"
+
+
 def test_single_evidence_question_has_no_parts_field(fake_search):
     res = evaluate.run_one(QUESTION, None, None, top_k=2, llm_model=None, retrieval_only=True)
     assert "parts_found" not in res
