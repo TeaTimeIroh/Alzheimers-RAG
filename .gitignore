@@ -13,3 +13,7 @@ pdfs/*
 parsed/
 chunks.jsonl
 *.zip
+
+# test / lint caches
+.pytest_cache/
+.ruff_cache/

@@ -1,4 +1,4 @@
-pymupdf<1.25          # PDF parsing (newer versions need Python 3.9+)
+pymupdf==1.24.11      # PDF parsing; pinned: the published results were produced with it
 sentence-transformers
 psycopg[binary]
 pgvector

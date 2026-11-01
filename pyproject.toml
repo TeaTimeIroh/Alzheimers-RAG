@@ -1,0 +1,16 @@
+[tool.ruff]
+line-length = 110
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]    # pycodestyle errors/warnings + pyflakes
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    # emitted by PyMuPDF's SWIG bindings on recent Pythons, not by this project
+    "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
+    # newer Starlette prefers httpx2 for its TestClient; httpx still works on every Python we test
+    "ignore:Using .httpx. with .starlette.testclient. is deprecated",
+]

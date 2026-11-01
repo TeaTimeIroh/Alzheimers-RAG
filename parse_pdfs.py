@@ -12,9 +12,9 @@ For every PDF in a folder it:
   6. writes  <out>/<name>.json  (machine-readable, used by the chunker in step 1)
      and     <out>/<name>.txt   (human-readable, for you to eyeball).
 
-Works on Python 3.8+ (Windows / Linux / macOS).
+Works on Python 3.9+ (tested in CI on 3.9, 3.11, 3.13; Windows / Linux / macOS).
 
-Install:   pip install "pymupdf<1.25"
+Install:   pip install -r requirements.txt
 Run:       python parse_pdfs.py --pdf-dir pdfs --csv pdfs/csv-alzheimer.csv --out parsed --limit 3
 """
 import argparse
@@ -28,7 +28,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-import fitz  # PyMuPDF
+import pymupdf  # PyMuPDF (the old import name "fitz" is deprecated)
 
 # A block whose top edge is in the top 7% (or bottom edge in the bottom 7%) of the page
 # is a header/footer *candidate*. It is only dropped if it repeats on many pages or is
@@ -46,7 +46,8 @@ CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 DOI_RE =re.compile(r"10\.\d{4,9}/[^\s\"<>]+", re.IGNORECASE)
 # Section names that count as headings even if the font gives no hint.
 SECTION_NAMES = re.compile(
-    r"^\s*(\d+\.?\s+|[IVX]+\.\s+)?(abstract|summary|highlights|research in context|introduction|background|methods?|materials and methods|"
+    r"^\s*(\d+\.?\s+|[IVX]+\.\s+)?(abstract|summary|highlights|research in context|introduction|"
+    r"background|methods?|materials and methods|"
     r"methods and materials|patients and methods|results( and discussion)?|discussion|conclusions?|"
     r"limitations|acknowledg(e)?ments?|funding|data availability|author contributions|"
     r"conflicts? of interest|supplementary (material|information)|study design|statistical analys[ie]s)\s*$",
@@ -106,7 +107,7 @@ def _span_text(line: dict) -> str:
     return "".join(s["text"] for s in line["spans"])
 
 
-def body_font_size(doc: "fitz.Document") -> float:
+def body_font_size(doc: "pymupdf.Document") -> float:
     """Most common font size, weighted by number of characters = the body-text size."""
     counts = Counter()
     for page in doc:
@@ -131,8 +132,9 @@ def order_blocks(blocks: List[dict], page_w: float) -> List[dict]:
             b["col"] = "right"
     # Two-column page = both columns cover a fair share of the page height. (Counting blocks
     # fails when a whole column is a single block - then the columns were read interleaved.)
-    cover = lambda c: sum(b["y1"] - b["y0"] for b in blocks
-                          if b["col"] == c and b["x1"] - b["x0"] > page_w * 0.3)
+    def cover(col: str) -> float:
+        return sum(b["y1"] - b["y0"] for b in blocks
+                   if b["col"] == col and b["x1"] - b["x0"] > page_w * 0.3)
     page_h = max([b["y1"] for b in blocks] + [1.0])
     if cover("left") < page_h * 0.15 or cover("right") < page_h * 0.15:   # not two-column
         # Narrow blocks sitting *beside* wide text (sidebar affiliations/footnotes next to an
@@ -143,11 +145,15 @@ def order_blocks(blocks: List[dict], page_w: float) -> List[dict]:
                 and (o["x0"] >= b["x1"] or o["x1"] <= b["x0"]) for o in blocks)
         side = [b for b in blocks if is_side(b)]
         main = [b for b in blocks if not is_side(b)]
-        key = lambda b: (b["y0"], b["x0"])
-        return sorted(main, key=key) + sorted(side, key=key)
+        def reading_key(b):
+            return (b["y0"], b["x0"])
+        return sorted(main, key=reading_key) + sorted(side, key=reading_key)
     ordered, left, right = [], [], []
-    flush = lambda: (ordered.extend(sorted(left, key=lambda b: b["y0"])),
-                     ordered.extend(sorted(right, key=lambda b: b["y0"])), left.clear(), right.clear())
+    def flush():
+        ordered.extend(sorted(left, key=lambda b: b["y0"]))
+        ordered.extend(sorted(right, key=lambda b: b["y0"]))
+        left.clear()
+        right.clear()
     for b in sorted(blocks, key=lambda b: (b["y0"], b["x0"])):
         if b["col"] == "full":
             flush()
@@ -194,14 +200,14 @@ def _is_bold(span: dict) -> bool:
 
 def _make_block(lines: List[dict], page_h: float, body: float) -> Optional[dict]:
     """Build one block record from a list of PyMuPDF line dicts."""
-    text = normalize_text("\n".join(_span_text(l) for l in lines)).strip()
-    spans = [s for l in lines for s in l["spans"] if s["text"].strip()]
+    text = normalize_text("\n".join(_span_text(ln) for ln in lines)).strip()
+    spans = [s for ln in lines for s in ln["spans"] if s["text"].strip()]
     if not text or not spans:
         return None
-    x0 = min(l["bbox"][0] for l in lines)
-    y0 = min(l["bbox"][1] for l in lines)
-    x1 = max(l["bbox"][2] for l in lines)
-    y1 = max(l["bbox"][3] for l in lines)
+    x0 = min(ln["bbox"][0] for ln in lines)
+    y0 = min(ln["bbox"][1] for ln in lines)
+    x1 = max(ln["bbox"][2] for ln in lines)
+    y1 = max(ln["bbox"][3] for ln in lines)
     rec = {
         "text": text, "x0": x0, "y0": y0, "x1": x1, "y1": y1,
         "in_margin": y0 < page_h * MARGIN_RATIO or y1 > page_h * (1 - MARGIN_RATIO),
@@ -220,7 +226,7 @@ def _make_block(lines: List[dict], page_h: float, body: float) -> Optional[dict]
 
 def looks_like_prose(b: dict) -> bool:
     """Body paragraph: body-sized font and reasonably long lines (table cells are short)."""
-    lines = [l for l in b["text"].split("\n") if l.strip()]
+    lines = [ln for ln in b["text"].split("\n") if ln.strip()]
     return len(b["text"]) >= 60 and sum(map(len, lines)) / max(1, len(lines)) >= 25
 
 
@@ -228,13 +234,13 @@ def _split_leading_heading(lines: List[dict], body: float) -> List[List[dict]]:
     """PyMuPDF often glues a heading to the paragraph under it ('Methods' + 30 body lines).
     If the first 1-2 lines look like a heading (bold or bigger) and the next line is plain
     body text, split them off so is_heading() can judge them on their own."""
-    def style(l):
-        spans = [s for s in l["spans"] if s["text"].strip()]
+    def style(ln):
+        spans = [s for s in ln["spans"] if s["text"].strip()]
         if not spans:
             return None
         return all(_is_bold(s) for s in spans), max(s["size"] for s in spans)
 
-    styles = [style(l) for l in lines]
+    styles = [style(ln) for ln in lines]
     if len(lines) < 2 or styles[0] is None:
         return [lines]
     k = 0
@@ -273,7 +279,7 @@ def validate_headings(blocks: List[dict], body: float, first_page: bool) -> None
             b["heading"] = False
 
 
-def extract_blocks(doc: "fitz.Document") -> List[List[dict]]:
+def extract_blocks(doc: "pymupdf.Document") -> List[List[dict]]:
     """Return, per page, the text blocks (in reading order) with position and font info."""
     body = body_font_size(doc)
     pages = []
@@ -372,7 +378,7 @@ def squash(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", normalize_text(s).lower())
 
 
-def match_metadata(doc: "fitz.Document", rows: List[Dict[str, str]]) -> Optional[Dict[str, str]]:
+def match_metadata(doc: "pymupdf.Document", rows: List[Dict[str, str]]) -> Optional[Dict[str, str]]:
     """Find this PDF's row in the PubMed CSV: first by DOI, then by title text."""
     if not rows:
         return None
@@ -397,7 +403,7 @@ def match_metadata(doc: "fitz.Document", rows: List[Dict[str, str]]) -> Optional
 
 # ----------------------------------------------------------------------------- main
 def parse_pdf(pdf_path: Path, rows: List[Dict[str, str]], keep_references: bool) -> dict:
-    doc = fitz.open(str(pdf_path))
+    doc = pymupdf.open(str(pdf_path))
     meta = match_metadata(doc, rows) or {}
     pages, stats = clean_pages(extract_blocks(doc), keep_references)
     result = {
