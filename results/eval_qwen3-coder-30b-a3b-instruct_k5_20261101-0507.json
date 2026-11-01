@@ -1,0 +1,420 @@
+{
+  "llm_model": "qwen3-coder-30b-a3b-instruct",
+  "top_k": 5,
+  "summary": {
+    "finding": {
+      "n": 6,
+      "hit@5": 6,
+      "hit@1": 1,
+      "MRR": 0.5,
+      "correct": 6,
+      "partial": 0,
+      "wrong": 0,
+      "refused": 0,
+      "cited right source": 6,
+      "avg LLM s": 24.4
+    },
+    "lookup": {
+      "n": 6,
+      "hit@5": 6,
+      "hit@1": 3,
+      "MRR": 0.694,
+      "correct": 5,
+      "partial": 0,
+      "wrong": 1,
+      "refused": 0,
+      "cited right source": 6,
+      "avg LLM s": 13.5
+    },
+    "unanswerable": {
+      "n": 3,
+      "correct": 3,
+      "partial": 0,
+      "wrong": 0,
+      "refused": 0,
+      "avg LLM s": 12.3
+    },
+    "all answerable": {
+      "n": 12,
+      "hit@5": 12,
+      "hit@1": 4,
+      "MRR": 0.597,
+      "correct": 11,
+      "partial": 0,
+      "wrong": 1,
+      "refused": 0,
+      "cited right source": 12,
+      "avg LLM s": 18.9
+    }
+  },
+  "results": [
+    {
+      "id": "F1",
+      "type": "finding",
+      "question": "In the sex-stratified GWAS of Alzheimer's neuropathology, which genetic variant was associated with neurofibrillary tangles only in males?",
+      "expected": "rs34331204 (chromosome 7): associated with tangles in males (P = 2.5e-8) but not females.",
+      "retrieved": [
+        "awz206:0000",
+        "awz206:0012",
+        "awz206:0008",
+        "awz206:0009",
+        "awz206:0010"
+      ],
+      "seconds_retrieval": 0.03,
+      "hit_rank": 1,
+      "answer": "In the sex-stratified GWAS of Alzheimer's neuropathology, the genetic variant rs34331204 on chromosome 7 was associated with neurofibrillary tangles only in males [1][3]. This SNP reached genome-wide significance in males (P = 2.48 � 10�8) but not in females (P = 0.85), and showed a sex interaction effect (P = 2.93 � 10�4) [3].",
+      "cited": [
+        1,
+        3
+      ],
+      "not_found": false,
+      "seconds_llm": 25.76,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "facts_matched": "1/1",
+      "cited_gold": true,
+      "verdict": "correct"
+    },
+    {
+      "id": "F2",
+      "type": "finding",
+      "question": "Which blood sample handling factor changed the measured values of every plasma biomarker that was tested?",
+      "expected": "The blood collection tube type.",
+      "retrieved": [
+        "ALZ-18-1484:0011",
+        "ALZ-18-1484:0026",
+        "ALZ-18-1484:0000",
+        "ALZ-18-1484:0001",
+        "ALZ-18-1484:0004"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 3,
+      "answer": "The blood sample handling factor that changed the measured values of every plasma biomarker tested was the collection tube type [3].",
+      "cited": [
+        3
+      ],
+      "not_found": false,
+      "seconds_llm": 9.35,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "facts_matched": "1/1",
+      "cited_gold": true,
+      "verdict": "correct"
+    },
+    {
+      "id": "F3",
+      "type": "finding",
+      "question": "Which existing drugs did the in silico drug-repositioning study propose as possible BACE-1 inhibitors?",
+      "expected": "Fluphenazine, Naratriptan, Bazedoxifene, Frovatriptan and Raloxifene.",
+      "retrieved": [
+        "ijms-24-08164:0023",
+        "ijms-24-08164:0013",
+        "ijms-24-08164:0000",
+        "ijms-24-08164:0008",
+        "ijms-24-08164:0003"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 3,
+      "answer": "The in silico drug-repositioning study proposed five existing drugs as possible BACE-1 inhibitors: Fluphenazine, Naratriptan, Bazedoxifene, Frovatriptan, and Raloxifene [3].",
+      "cited": [
+        3
+      ],
+      "not_found": false,
+      "seconds_llm": 18.03,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "facts_matched": "5/5",
+      "cited_gold": true,
+      "verdict": "correct"
+    },
+    {
+      "id": "F4",
+      "type": "finding",
+      "question": "In the Cardiovascular Health Study cohort, how were the CLU, CR1 and PICALM risk genes related to cognitive decline?",
+      "expected": "CLU and CR1: more rapid cognitive decline. PICALM: earlier age at midpoint of decline.",
+      "retrieved": [
+        "nihms444967:0016",
+        "nihms444967:0000",
+        "nihms444967:0010",
+        "nihms444967:0015",
+        "nihms444967:0011"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 2,
+      "answer": "In the Cardiovascular Health Study cohort, genetic variations in CLU, CR1, and PICALM were associated with different aspects of cognitive decline trajectories.\n\nCLU SNP rs11136000 was linked to more rapid cognitive decline on the 3MS and nearly reached significance for the DSST [3]. This association remained significant even after accounting for APOE genotype, age, sex, and education [3].\n\nCR1 SNP rs3818361 was associated with more rapid cognitive decline on the DSST [3]. The study found that this association did not differ between individuals who did or did not carry an APOE ε4 allele [3]. CR1 is a complement receptor expressed in the cerebral cortex, and its genetic variants may influence the complement cascade involved in synapse elimination during neurodegeneration [4].\n\nPICALM SNP rs541458 was associated with an earlier age at midpoint of cognitive decline for the 3MS but not with rate of decline, and it was not associated with either parameter for the DSST [3]. This association did not persist in additive models [4], although PICALM encodes a protein involved in clathrin-mediated endocytosis which may affect Aβ clearance from the brain [4].\n\nIt should be noted that while rs3851179 in PICALM was evaluated, it was not associated with change in either parameter for the 3MS or DSST [3]. Additionally, although CLU and CR1 associations with AD risk did not display confounding with APOE genotype, PICALM's association with AD risk is reduced when accounting for APOE status [1].\n\nThe study concluded that evaluating cognitive trajectories provides a powerful approach to dissecting genetic effects on the processes leading to cognitive deterioration and Alzheimer’s disease [2].",
+      "cited": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "not_found": false,
+      "seconds_llm": 59.37,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "facts_matched": "5/5",
+      "cited_gold": true,
+      "verdict": "correct"
+    },
+    {
+      "id": "F5",
+      "type": "finding",
+      "question": "Does the lysosomal and autophagic dysfunction caused by C99 accumulation depend on amyloid-beta?",
+      "expected": "No - the effect was Aβ-independent (it even worsened when γ-secretase was inhibited).",
+      "retrieved": [
+        "401_2016_Article_1577:0003",
+        "401_2016_Article_1577:0000",
+        "401_2016_Article_1577:0046",
+        "401_2016_Article_1577:0043",
+        "401_2016_Article_1577:0048"
+      ],
+      "seconds_retrieval": 0.03,
+      "hit_rank": 2,
+      "answer": "No, the lysosomal and autophagic dysfunction caused by C99 accumulation does not depend on amyloid-beta. The study demonstrates that the effects of C99 are Aβ-independent [2]. In fact, pharmacological inhibition of γ-secretase, which increases C99 levels, exacerbated the pathology even further, showing a C99 dose-dependent effect without involvement of Aβ [1]. Additionally, no effect was observed in inhibitor-treated wild-type animals, suggesting that lysosomal dysfunction was directly linked to C99 accumulation rather than Aβ production [2].",
+      "cited": [
+        1,
+        2
+      ],
+      "not_found": false,
+      "seconds_llm": 21.95,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "facts_matched": "1/1",
+      "cited_gold": true,
+      "verdict": "correct"
+    },
+    {
+      "id": "F6",
+      "type": "finding",
+      "question": "Which type of soluble amyloid-beta oligomer was elevated in the brains of Alzheimer's patients, and which antibody detected it?",
+      "expected": "Fibrillar oligomers, detected by the OC antibody (not prefibrillar/A11 oligomers).",
+      "retrieved": [
+        "nihms123378:0003",
+        "nihms123378:0008",
+        "nihms123378:0004",
+        "nihms123378:0011",
+        "nihms123378:0010"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 3,
+      "answer": "Soluble fibrillar oligomers were elevated in the brains of Alzheimer's patients. The OC antibody detected these fibrillar oligomers [3].",
+      "cited": [
+        3
+      ],
+      "not_found": false,
+      "seconds_llm": 11.69,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "facts_matched": "2/2",
+      "cited_gold": true,
+      "verdict": "correct"
+    },
+    {
+      "id": "L1",
+      "type": "lookup",
+      "question": "In the APOE-stratified GWAS, how many regions of interest were used for the Bonferroni correction?",
+      "expected": "29 (threshold P < 0.05/29 = 0.0017).",
+      "retrieved": [
+        "41588_2026_Article_2713:0024",
+        "41588_2026_Article_2713:0030",
+        "41588_2026_Article_2713:0026",
+        "41588_2026_Article_2713:0001",
+        "41588_2026_Article_2713:0004"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 3,
+      "answer": "In the APOE-stratified GWAS, a Bonferroni correction was applied for 29 regions of interest [3].",
+      "cited": [
+        3
+      ],
+      "not_found": false,
+      "seconds_llm": 15.87,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "facts_matched": "1/1",
+      "cited_gold": true,
+      "verdict": "correct"
+    },
+    {
+      "id": "L2",
+      "type": "lookup",
+      "question": "How many participants were included in the genome-wide study of cognitive resilience to Alzheimer's neuropathology?",
+      "expected": "5108 participants (one clinical trial and three cohort studies).",
+      "retrieved": [
+        "awaa209:0015",
+        "awaa209:0000",
+        "awaa209:0003",
+        "awaa209:0035",
+        "awaa209:0034"
+      ],
+      "seconds_retrieval": 0.03,
+      "hit_rank": 1,
+      "answer": "The genome-wide association study of cognitive resilience to Alzheimer's neuropathology included 5108 participants [1].",
+      "cited": [
+        1
+      ],
+      "not_found": false,
+      "seconds_llm": 10.78,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "facts_matched": "1/1",
+      "cited_gold": true,
+      "verdict": "correct"
+    },
+    {
+      "id": "L3",
+      "type": "lookup",
+      "question": "How many males and how many females were in the pooled autopsy dataset of the study on sex differences in genetic predictors of Alzheimer's pathology?",
+      "expected": "2701 males and 3275 females.",
+      "retrieved": [
+        "awz206:0000",
+        "awz206:0008",
+        "awz206:0003",
+        "awz206:0015",
+        "awz206:0001"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 1,
+      "answer": "The pooled autopsy dataset included 2701 males and 3275 females [1].",
+      "cited": [
+        1
+      ],
+      "not_found": false,
+      "seconds_llm": 12.33,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "facts_matched": "2/2",
+      "cited_gold": true,
+      "verdict": "correct"
+    },
+    {
+      "id": "L4",
+      "type": "lookup",
+      "question": "How many Alzheimer's patients, MCI patients and healthy controls took part in the DTI and MR volumetry study of the hippocampus to posterior cingulate circuit?",
+      "expected": "10 AD, 10 MCI and 18 healthy controls.",
+      "retrieved": [
+        "NRI2012-517876:0000",
+        "NRI2012-517876:0002",
+        "NRI2012-517876:0010",
+        "NRI2012-517876:0017",
+        "NRI2012-517876:0005"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 1,
+      "answer": "The study included 10 Alzheimer's disease (AD) patients, 10 mild cognitive impairment (MCI) patients, and 18 healthy controls [1].",
+      "cited": [
+        1
+      ],
+      "not_found": false,
+      "seconds_llm": 16.49,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "facts_matched": "2/2",
+      "cited_gold": true,
+      "verdict": "correct"
+    },
+    {
+      "id": "L5",
+      "type": "lookup",
+      "question": "In the survey of how cohorts handle blood samples, what was the longest reported time between blood draw and centrifugation?",
+      "expected": "30 hours (from the results section, not the abstract).",
+      "retrieved": [
+        "ALZ-18-1484:0019",
+        "ALZ-18-1484:0008",
+        "ALZ-18-1484:0020",
+        "ALZ-18-1484:0004",
+        "ALZ-18-1484:0007"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 2,
+      "answer": "The longest reported time between blood draw and centrifugation was 30 hours [2].",
+      "cited": [
+        2
+      ],
+      "not_found": false,
+      "seconds_llm": 12.2,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "facts_matched": "1/1",
+      "cited_gold": true,
+      "verdict": "correct"
+    },
+    {
+      "id": "L6",
+      "type": "lookup",
+      "question": "How much hippocampal neuron loss was reported in 10-month-old APP/PS1KI mice?",
+      "expected": ">50% hippocampal neuron loss (from the body text, not the abstract).",
+      "retrieved": [
+        "IJAD2010-723782:0004",
+        "IJAD2010-723782:0006",
+        "IJAD2010-723782:0003",
+        "IJAD2010-723782:0002",
+        "IJAD2010-723782:0008"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 3,
+      "answer": "A significant hippocampal CA1 neuron loss of −14% was reported in 10-month-old APP/PS1KI mice [3].",
+      "cited": [
+        3
+      ],
+      "not_found": false,
+      "seconds_llm": 13.43,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "facts_matched": "0/1",
+      "cited_gold": true,
+      "verdict": "wrong"
+    },
+    {
+      "id": "U1",
+      "type": "unanswerable",
+      "question": "What is the recommended dose of lecanemab?",
+      "expected": "Not in the papers (lecanemab is never mentioned).",
+      "retrieved": [
+        "ijms-24-08164:0011",
+        "ijms-24-08164:0007",
+        "ijms-24-08164:0018",
+        "ijms-24-08164:0010",
+        "ijms-24-08164:0015"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": null,
+      "answer": "I could not find this in the provided papers.",
+      "cited": [],
+      "not_found": true,
+      "seconds_llm": 14.48,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "verdict": "correct"
+    },
+    {
+      "id": "U2",
+      "type": "unanswerable",
+      "question": "How many participants dropped out of the Dementia-MOVE exercise trial before the six-month follow-up?",
+      "expected": "Not in the papers: the trial abstract gives 46 enrolled patients but no dropout numbers (near-miss question).",
+      "retrieved": [
+        "ALZ-20-e091460:0000",
+        "ALZ-20-e091460:0001",
+        "nihms444967:0013",
+        "nihms444967:0017",
+        "awaa209:0004"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": null,
+      "answer": "I could not find this in the provided papers.",
+      "cited": [],
+      "not_found": true,
+      "seconds_llm": 9.95,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "verdict": "correct"
+    },
+    {
+      "id": "U3",
+      "type": "unanswerable",
+      "question": "What is the plasma half-life of aducanumab?",
+      "expected": "Not in the papers (aducanumab is never mentioned).",
+      "retrieved": [
+        "ALZ-18-1484:0014",
+        "ijms-24-08164:0007",
+        "ALZ-18-1484:0016",
+        "ALZ-18-1484:0019",
+        "ALZ-18-1484:0015"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": null,
+      "answer": "I could not find this in the provided papers.",
+      "cited": [],
+      "not_found": true,
+      "seconds_llm": 12.61,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "verdict": "correct"
+    }
+  ]
+}

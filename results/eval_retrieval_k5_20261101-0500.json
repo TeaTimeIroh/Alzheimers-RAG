@@ -1,0 +1,251 @@
+{
+  "llm_model": null,
+  "top_k": 5,
+  "summary": {
+    "finding": {
+      "n": 6,
+      "hit@5": 6,
+      "hit@1": 1,
+      "MRR": 0.5
+    },
+    "lookup": {
+      "n": 6,
+      "hit@5": 6,
+      "hit@1": 3,
+      "MRR": 0.694
+    },
+    "all answerable": {
+      "n": 12,
+      "hit@5": 12,
+      "hit@1": 4,
+      "MRR": 0.597
+    }
+  },
+  "results": [
+    {
+      "id": "F1",
+      "type": "finding",
+      "question": "In the sex-stratified GWAS of Alzheimer's neuropathology, which genetic variant was associated with neurofibrillary tangles only in males?",
+      "expected": "rs34331204 (chromosome 7): associated with tangles in males (P = 2.5e-8) but not females.",
+      "retrieved": [
+        "awz206:0000",
+        "awz206:0012",
+        "awz206:0008",
+        "awz206:0009",
+        "awz206:0010"
+      ],
+      "seconds_retrieval": 0.04,
+      "hit_rank": 1
+    },
+    {
+      "id": "F2",
+      "type": "finding",
+      "question": "Which blood sample handling factor changed the measured values of every plasma biomarker that was tested?",
+      "expected": "The blood collection tube type.",
+      "retrieved": [
+        "ALZ-18-1484:0011",
+        "ALZ-18-1484:0026",
+        "ALZ-18-1484:0000",
+        "ALZ-18-1484:0001",
+        "ALZ-18-1484:0004"
+      ],
+      "seconds_retrieval": 0.01,
+      "hit_rank": 3
+    },
+    {
+      "id": "F3",
+      "type": "finding",
+      "question": "Which existing drugs did the in silico drug-repositioning study propose as possible BACE-1 inhibitors?",
+      "expected": "Fluphenazine, Naratriptan, Bazedoxifene, Frovatriptan and Raloxifene.",
+      "retrieved": [
+        "ijms-24-08164:0023",
+        "ijms-24-08164:0013",
+        "ijms-24-08164:0000",
+        "ijms-24-08164:0008",
+        "ijms-24-08164:0003"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 3
+    },
+    {
+      "id": "F4",
+      "type": "finding",
+      "question": "In the Cardiovascular Health Study cohort, how were the CLU, CR1 and PICALM risk genes related to cognitive decline?",
+      "expected": "CLU and CR1: more rapid cognitive decline. PICALM: earlier age at midpoint of decline.",
+      "retrieved": [
+        "nihms444967:0016",
+        "nihms444967:0000",
+        "nihms444967:0010",
+        "nihms444967:0015",
+        "nihms444967:0011"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 2
+    },
+    {
+      "id": "F5",
+      "type": "finding",
+      "question": "Does the lysosomal and autophagic dysfunction caused by C99 accumulation depend on amyloid-beta?",
+      "expected": "No - the effect was Aβ-independent (it even worsened when γ-secretase was inhibited).",
+      "retrieved": [
+        "401_2016_Article_1577:0003",
+        "401_2016_Article_1577:0000",
+        "401_2016_Article_1577:0046",
+        "401_2016_Article_1577:0043",
+        "401_2016_Article_1577:0048"
+      ],
+      "seconds_retrieval": 0.01,
+      "hit_rank": 2
+    },
+    {
+      "id": "F6",
+      "type": "finding",
+      "question": "Which type of soluble amyloid-beta oligomer was elevated in the brains of Alzheimer's patients, and which antibody detected it?",
+      "expected": "Fibrillar oligomers, detected by the OC antibody (not prefibrillar/A11 oligomers).",
+      "retrieved": [
+        "nihms123378:0003",
+        "nihms123378:0008",
+        "nihms123378:0004",
+        "nihms123378:0011",
+        "nihms123378:0010"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 3
+    },
+    {
+      "id": "L1",
+      "type": "lookup",
+      "question": "In the APOE-stratified GWAS, how many regions of interest were used for the Bonferroni correction?",
+      "expected": "29 (threshold P < 0.05/29 = 0.0017).",
+      "retrieved": [
+        "41588_2026_Article_2713:0024",
+        "41588_2026_Article_2713:0030",
+        "41588_2026_Article_2713:0026",
+        "41588_2026_Article_2713:0001",
+        "41588_2026_Article_2713:0004"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 3
+    },
+    {
+      "id": "L2",
+      "type": "lookup",
+      "question": "How many participants were included in the genome-wide study of cognitive resilience to Alzheimer's neuropathology?",
+      "expected": "5108 participants (one clinical trial and three cohort studies).",
+      "retrieved": [
+        "awaa209:0015",
+        "awaa209:0000",
+        "awaa209:0003",
+        "awaa209:0035",
+        "awaa209:0034"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 1
+    },
+    {
+      "id": "L3",
+      "type": "lookup",
+      "question": "How many males and how many females were in the pooled autopsy dataset of the study on sex differences in genetic predictors of Alzheimer's pathology?",
+      "expected": "2701 males and 3275 females.",
+      "retrieved": [
+        "awz206:0000",
+        "awz206:0008",
+        "awz206:0003",
+        "awz206:0015",
+        "awz206:0001"
+      ],
+      "seconds_retrieval": 0.01,
+      "hit_rank": 1
+    },
+    {
+      "id": "L4",
+      "type": "lookup",
+      "question": "How many Alzheimer's patients, MCI patients and healthy controls took part in the DTI and MR volumetry study of the hippocampus to posterior cingulate circuit?",
+      "expected": "10 AD, 10 MCI and 18 healthy controls.",
+      "retrieved": [
+        "NRI2012-517876:0000",
+        "NRI2012-517876:0002",
+        "NRI2012-517876:0010",
+        "NRI2012-517876:0017",
+        "NRI2012-517876:0005"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 1
+    },
+    {
+      "id": "L5",
+      "type": "lookup",
+      "question": "In the survey of how cohorts handle blood samples, what was the longest reported time between blood draw and centrifugation?",
+      "expected": "30 hours (from the results section, not the abstract).",
+      "retrieved": [
+        "ALZ-18-1484:0019",
+        "ALZ-18-1484:0008",
+        "ALZ-18-1484:0020",
+        "ALZ-18-1484:0004",
+        "ALZ-18-1484:0007"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 2
+    },
+    {
+      "id": "L6",
+      "type": "lookup",
+      "question": "How much hippocampal neuron loss was reported in 10-month-old APP/PS1KI mice?",
+      "expected": ">50% hippocampal neuron loss (from the body text, not the abstract).",
+      "retrieved": [
+        "IJAD2010-723782:0004",
+        "IJAD2010-723782:0006",
+        "IJAD2010-723782:0003",
+        "IJAD2010-723782:0002",
+        "IJAD2010-723782:0008"
+      ],
+      "seconds_retrieval": 0.01,
+      "hit_rank": 3
+    },
+    {
+      "id": "U1",
+      "type": "unanswerable",
+      "question": "What is the recommended dose of lecanemab?",
+      "expected": "Not in the papers (lecanemab is never mentioned).",
+      "retrieved": [
+        "ijms-24-08164:0011",
+        "ijms-24-08164:0007",
+        "ijms-24-08164:0018",
+        "ijms-24-08164:0010",
+        "ijms-24-08164:0015"
+      ],
+      "seconds_retrieval": 0.01,
+      "hit_rank": null
+    },
+    {
+      "id": "U2",
+      "type": "unanswerable",
+      "question": "How many participants dropped out of the Dementia-MOVE exercise trial before the six-month follow-up?",
+      "expected": "Not in the papers: the trial abstract gives 46 enrolled patients but no dropout numbers (near-miss question).",
+      "retrieved": [
+        "ALZ-20-e091460:0000",
+        "ALZ-20-e091460:0001",
+        "nihms444967:0013",
+        "nihms444967:0017",
+        "awaa209:0004"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": null
+    },
+    {
+      "id": "U3",
+      "type": "unanswerable",
+      "question": "What is the plasma half-life of aducanumab?",
+      "expected": "Not in the papers (aducanumab is never mentioned).",
+      "retrieved": [
+        "ALZ-18-1484:0014",
+        "ijms-24-08164:0007",
+        "ALZ-18-1484:0016",
+        "ALZ-18-1484:0019",
+        "ALZ-18-1484:0015"
+      ],
+      "seconds_retrieval": 0.01,
+      "hit_rank": null
+    }
+  ]
+}

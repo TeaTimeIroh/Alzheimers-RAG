@@ -1,0 +1,8 @@
+pymupdf<1.25          # PDF parsing (newer versions need Python 3.9+)
+sentence-transformers
+psycopg[binary]
+pgvector
+numpy
+requests
+fastapi
+uvicorn

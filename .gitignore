@@ -1,0 +1,15 @@
+# secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Paper PDFs and anything derived from their full text: the papers' copyright stays with
+# their publishers, so they are not redistributed here. Only the PubMed metadata CSV is kept.
+pdfs/*
+!pdfs/csv-alzheimer.csv
+parsed/
+chunks.jsonl
+*.zip
