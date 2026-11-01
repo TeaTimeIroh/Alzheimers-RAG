@@ -39,7 +39,7 @@ def main() -> None:
     args = ap.parse_args()
 
     model = SentenceTransformer(args.model)
-    with psycopg.connect(DSN) as conn:
+    with psycopg.connect(DSN, connect_timeout=5) as conn:
         register_vector(conn)
         for rank, (cid, title, year, section, p0, p1, text, score) in enumerate(
                 search(args.query, model, conn, args.top_k), start=1):

@@ -185,7 +185,7 @@ def main() -> None:
     except AttributeError:
         pass
 
-    questions = [json.loads(l) for l in open(args.questions, encoding="utf-8") if l.strip()]
+    questions = [json.loads(line) for line in open(args.questions, encoding="utf-8") if line.strip()]
     if args.only:
         wanted = {x.strip() for x in args.only.split(",")}
         questions = [q for q in questions if q["id"] in wanted]

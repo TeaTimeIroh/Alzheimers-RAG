@@ -1,0 +1,13 @@
+# What CI needs to run the tests and the linter.
+# Deliberately NOT sentence-transformers: it pulls in PyTorch (~GBs), and the tests replace the
+# embedding model with a stub, so they run without a database, an LLM, the model or the PDFs.
+pymupdf==1.24.11
+psycopg[binary]
+pgvector
+numpy
+requests
+fastapi
+uvicorn
+httpx
+pytest
+ruff

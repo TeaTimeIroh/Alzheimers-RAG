@@ -18,7 +18,7 @@ Run:  python answer.py "Which variants' effects depend on APOE e4?"
       python answer.py --list-models
       python answer.py "..." --json          (machine-readable, for the evaluation script)
 
-Python 3.8+. Uses plain `requests` (no vendor SDK).
+Python 3.11+ (tested in CI on 3.11, 3.13, 3.14). Uses plain `requests` (no vendor SDK).
 """
 import argparse
 import json
@@ -220,7 +220,8 @@ def main() -> None:
     print("\n" + result["answer"] + "\n")
     print("Sources (* = cited in the answer):")
     for s in result["sources"]:
-        print("  {mark}[{n}] {title} ({year})\n       {section}, pages {p0}-{p1}   {cid}   score {score:.3f}".format(
+        line = "  {mark}[{n}] {title} ({year})\n       {section}, pages {p0}-{p1}   {cid}   score {score:.3f}"
+        print(line.format(
             mark="*" if s["n"] in result["cited"] else " ", n=s["n"], title=s["title"][:80],
             year=s["year"], section=s["section"][:50], p0=s["page_start"], p1=s["page_end"],
             cid=s["chunk_id"], score=s["score"]))

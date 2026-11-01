@@ -1,5 +1,7 @@
 # Alzheimer's Papers RAG
 
+[![CI](https://github.com/TeaTimeIroh/Alzheimers-RAG/actions/workflows/ci.yml/badge.svg)](https://github.com/TeaTimeIroh/Alzheimers-RAG/actions/workflows/ci.yml)
+
 A retrieval-augmented question-answering system over 19 Alzheimer's disease research papers.
 Ask a question in plain English and get an answer written **only from the papers**, with
 numbered citations pointing to the exact passage, section and page it came from. When the
@@ -137,7 +139,7 @@ Things that only showed up by measuring, and what was done about them:
 
 ## Build and run
 
-Requirements: Python 3.8+, [Docker Desktop](https://www.docker.com/products/docker-desktop/),
+Requirements: Python 3.11+, [Docker Desktop](https://www.docker.com/products/docker-desktop/),
 and either [LM Studio](https://lmstudio.ai/) with a chat model or a
 [Gemini API key](https://aistudio.google.com/apikey).
 Commands below are for Windows (Anaconda Prompt); on macOS/Linux use `cp` instead of `copy`.
@@ -172,6 +174,26 @@ uvicorn api:app --reload
 :: when done: stop the database (keeps the data; "down -v" would delete it)
 docker compose stop
 ```
+
+### Tests
+
+```bat
+pip install -r requirements-dev.txt
+ruff check .
+pytest
+```
+
+90 tests cover the parser (including a PDF generated on the fly with a running header,
+page numbers and a reference list), the chunker (size cap with overlap, front-matter and
+boilerplate filtering, paragraphs split across pages), citation parsing, the LLM client, the
+evaluator's scoring, the API endpoints and error codes, and the format of
+`eval_questions.jsonl`. They need no database, LLM, embedding model or PDFs - those are faked -
+so [GitHub Actions](.github/workflows/ci.yml) runs them with ruff on Python 3.11, 3.13 and 3.14
+for every push and pull request. Several tests pin down bugs found during development (e.g.
+two-column pages read out of order, heading-less papers losing their main text).
+
+PyMuPDF is pinned to the version that produced the published results; with it, the pipeline
+reproduces the same chunks byte for byte on Python 3.13 and 3.14.
 
 ### API
 
@@ -305,10 +327,14 @@ Roadmap:
 ├── api.py                 FastAPI app
 ├── evaluate.py            evaluation runner
 ├── eval_questions.jsonl   15 test questions with expected answers and evidence passages
+├── tests/                 pytest suite (no database / LLM / model needed)
+├── .github/workflows/     CI: ruff + pytest on Python 3.11, 3.13, 3.14
 ├── results/               evaluation outputs (all answers, per-question scores)
 ├── docs/images/           screenshots used in this README
 ├── docker-compose.yml     Postgres 16 + pgvector
 ├── .env.example           LLM / database settings template
+├── requirements*.txt      runtime / test dependencies
+├── pyproject.toml         ruff and pytest settings
 └── pdfs/csv-alzheimer.csv PubMed metadata of the papers (PDFs not included)
 ```
 

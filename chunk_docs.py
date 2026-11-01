@@ -22,7 +22,7 @@ How chunks are built:
   * consecutive chunks of the same section share the last ~--overlap-words words,
   * tiny leftovers are merged into the previous chunk (if that stays under the cap) or dropped.
 
-Works on Python 3.8+.
+Works on Python 3.11+ (tested in CI on 3.11, 3.13, 3.14).
 Run:  python chunk_docs.py --parsed parsed --out chunks.jsonl
 """
 import argparse
@@ -31,7 +31,7 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 SENT_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z(\[])")
 MIN_WORDS = 25            # chunks shorter than this get merged or dropped
@@ -237,7 +237,8 @@ def chunk_doc(doc: dict, target: int, max_words: int, overlap: int,
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Chunk parsed papers for retrieval.")
-    ap.add_argument("--parsed", type=Path, default=Path("parsed"), help="folder with parse_pdfs.py .json output")
+    ap.add_argument("--parsed", type=Path, default=Path("parsed"),
+                    help="folder with parse_pdfs.py .json output")
     ap.add_argument("--out", type=Path, default=Path("chunks.jsonl"))
     ap.add_argument("--target-words", type=int, default=220, help="aim for chunks of about this many words")
     ap.add_argument("--max-words", type=int, default=320, help="hard cap per chunk (overlap included)")
@@ -246,7 +247,8 @@ def main() -> None:
                     help="keep title/author/affiliation text (dropped by default)")
     ap.add_argument("--keep-boilerplate", action="store_true",
                     help="keep Acknowledgements, Funding, Conflicts of interest, ... sections")
-    ap.add_argument("--skip-front-matter", action="store_true", help=argparse.SUPPRESS)  # old flag, now default
+    # old flag, dropping front matter is now the default
+    ap.add_argument("--skip-front-matter", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
 
     files = sorted(args.parsed.glob("*.json"))
