@@ -79,12 +79,13 @@ def test_bad_tool_calls_are_reported_back_not_crashing(world):
     world["script"] = [
         {"tool_calls": [call("search_paper", paper_id="nope", query="x"), call("delete_db"),
                         {"id": "c3", "function": {"name": "search", "arguments": "{not json"}}]},
-        {"content": answer.NOT_FOUND},
+        {"tool_calls": [call("search_paper", paper_id="bhad369", query="tracer")]},
+        {"content": "Florbetapir [1]."},
     ]
     r = agent.ask_agent("q", None, None, llm_model="m")
-    errors = [t["error"] for t in r["trace"]]
+    errors = [t.get("error", "") for t in r["trace"]]
     assert "unknown paper_id" in errors[0] and "unknown tool" in errors[1] and "non-empty query" in errors[2]
-    assert r["not_found"] is True and r["sources"] == []
+    assert r["answer"] == "Florbetapir [1]." and r["searched"] is True
 
 
 def test_step_limit_forces_an_answer_without_tools(world):
@@ -97,7 +98,7 @@ def test_step_limit_forces_an_answer_without_tools(world):
 
 
 def test_thinking_is_stripped_and_empty_answer_counts_as_refusal(world):
-    world["script"] = [{"content": "<think>hmm</think>"}]
+    world["script"] = [{"tool_calls": [call("search", query="q")]}, {"content": "<think>hmm</think>"}]
     r = agent.ask_agent("q", None, None, llm_model="m")
     assert r["answer"] == answer.NOT_FOUND and r["not_found"] is True
 
@@ -125,8 +126,40 @@ def test_retry_on_rate_limit(monkeypatch):
     assert agent.chat_with_retry([], "m", None) == {"content": "ok"} and calls["n"] == 2
 
 
-def test_prompt_states_the_exact_refusal_sentence(world):
-    world["script"] = [{"content": answer.NOT_FOUND}]
-    agent.ask_agent("q", None, None, llm_model="m")
-    system = world["seen"][0]["messages"][0]["content"]
-    assert 'with exactly this sentence: "{}"'.format(answer.NOT_FOUND) in system
+def test_cannot_answer_is_a_structured_refusal(world):
+    world["script"] = [
+        {"tool_calls": [call("search", query="lecanemab dose")]},
+        {"tool_calls": [call("cannot_answer", reason="No paper mentions lecanemab.")]},
+    ]
+    r = agent.ask_agent("Dose of lecanemab?", None, None, llm_model="m")
+    assert r["not_found"] is True and r["gave_up"] is True
+    assert r["answer"] == answer.NOT_FOUND + " No paper mentions lecanemab."
+    assert r["steps"] == 1 and r["llm_calls"] == 2
+    assert "cannot_answer(reason)" in world["seen"][0]["messages"][0]["content"]
+
+
+def test_answering_without_searching_is_sent_back(world):
+    world["script"] = [
+        {"content": answer.NOT_FOUND},                                    # refuses blind
+        {"tool_calls": [call("search_paper", paper_id="bhad369", query="tracer")]},
+        {"content": "Florbetapir [1]."},
+    ]
+    r = agent.ask_agent("q", None, None, llm_model="m")
+    assert r["answer"] == "Florbetapir [1]." and r["nudges"] == 1 and r["not_found"] is False
+    assert world["seen"][1]["messages"][-1]["content"] == agent.SEARCH_FIRST
+
+
+def test_cannot_answer_before_any_search_is_rejected(world):
+    world["script"] = [
+        {"tool_calls": [call("cannot_answer", reason="probably not there")]},
+        {"tool_calls": [call("search", query="q"), call("cannot_answer", reason="not there")]},
+    ]
+    r = agent.ask_agent("q", None, None, llm_model="m")
+    assert "search" in r["trace"][0]["error"].lower()
+    assert r["gave_up"] is True and r["searched"] is True                # same-turn search counts
+
+
+def test_never_searching_ends_at_the_step_limit(world):
+    world["script"] = [{"content": "I think it is X."}] * 3
+    r = agent.ask_agent("q", None, None, llm_model="m", max_steps=2)
+    assert r["searched"] is False and r["nudges"] == 2 and r["answer"] == "I think it is X."

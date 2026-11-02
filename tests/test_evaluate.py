@@ -200,3 +200,4 @@ def test_agent_results_are_scored_on_every_passage_it_saw(monkeypatch):
     assert res["steps"] == 2 and res["retrieved"] == ["a:0006", "x:0001", "b:0007"]
     s = evaluate.summarise([res], 5, False, agent=True)["multi"]
     assert s["evidence found"] == 1 and "MRR" not in s and s["avg tool steps"] == 2
+    assert s["never searched"] == 0 and s["sent back to search"] == 0

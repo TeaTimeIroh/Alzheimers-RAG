@@ -122,7 +122,9 @@ def run_agent(q: dict, conn, embed_model, llm_model: Optional[str],
                       seconds_retrieval=result["seconds"]["retrieval"],
                       answer=result["answer"], cited=result["cited"], not_found=result["not_found"],
                       seconds_llm=result["seconds"]["llm"], llm_model=result["llm_model"],
-                      steps=result["steps"], llm_calls=result["llm_calls"], trace=result["trace"])
+                      steps=result["steps"], llm_calls=result["llm_calls"],
+                      searched=result.get("searched", True), nudges=result.get("nudges", 0),
+                      gave_up=result.get("gave_up", False), trace=result["trace"])
     return score(q, res, {h["chunk_id"]: h["text"] for h in result["hits"]})
 
 
@@ -245,6 +247,10 @@ def summarise(results: List[dict], top_k: int, retrieval_only: bool,
             s["avg tool steps"] = round(sum(r["steps"] for r in rs) / len(rs), 1)
             s["avg LLM calls"] = round(sum(r["llm_calls"] for r in rs) / len(rs), 1)
             s["avg passages seen"] = round(sum(len(r["retrieved"]) for r in rs) / len(rs), 1)
+            # answers given without a single search (only possible if the model ignores the
+            # search-first rule until the step limit), and answers sent back by that rule
+            s["never searched"] = sum(not r.get("searched", True) for r in rs)
+            s["sent back to search"] = sum(bool(r.get("nudges")) for r in rs)
         summary[t] = s
     return summary
 

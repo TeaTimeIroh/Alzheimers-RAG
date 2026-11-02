@@ -44,17 +44,19 @@ Papers in the collection (id | title | year):
 Tools:
 - search(query): the most relevant passages from all papers.
 - search_paper(paper_id, query): the most relevant passages from one paper (use an id above).
+- cannot_answer(reason): use this, after searching, when the papers do not contain the answer.
 
 How to work:
-- Always search before answering. Every passage you receive has a number [n] that stays the
-  same for the whole conversation; cite those numbers.
+- Always search before answering: the paper list alone is not enough to know what a paper
+  says. Every passage you receive has a number [n] that stays the same for the whole
+  conversation; cite those numbers.
 - If the question is about more than one study, identify each study's paper in the list and
   use search_paper for each, so every part of the answer comes from the right paper.
 - If a search does not return what you need, search again with other words.
 - Stop searching as soon as you have passages for every part of the question, then write the
   final answer as a normal message (no tool call).
-- If after searching the passages do not contain the answer, your final message must start
-  with exactly this sentence: "{not_found}" You may add one sentence on what the papers do say.
+- If after searching the passages do not contain the answer, call cannot_answer with a short
+  reason instead of writing an answer.
 
 Rules:
 {rules}"""
@@ -73,7 +75,18 @@ TOOLS = [
             "paper_id": {"type": "string", "description": "a paper id from the list"},
             "query": {"type": "string", "description": "what to look for, in plain words"}},
             "required": ["paper_id", "query"]}}},
+    {"type": "function", "function": {
+        "name": "cannot_answer",
+        "description": "Finish without an answer because the papers do not contain it. Only "
+                       "after searching.",
+        "parameters": {"type": "object", "properties": {
+            "reason": {"type": "string", "description": "one sentence: what is missing, and "
+                                                        "what the papers do say if relevant"}},
+            "required": ["reason"]}}},
 ]
+
+SEARCH_FIRST = ("You have not searched yet. Use search or search_paper first; if the papers "
+                "turn out not to contain the answer, call cannot_answer.")
 
 
 def chat_with_retry(messages: List[dict], model: str, tools: Optional[List[dict]],
@@ -134,7 +147,7 @@ def run_tool(name: str, args: dict, conn, embed_model, paper_ids: set, retrieval
     the call come back as text, so the model can correct itself instead of crashing the run."""
     from search import search
     if name not in ("search", "search_paper"):
-        return "Error: unknown tool {!r}. Use search or search_paper.".format(name), []
+        return "Error: unknown tool {!r}. Use search, search_paper or cannot_answer.".format(name), []
     query = str(args.get("query", "")).strip()
     if not query:
         return "Error: give a non-empty query.", []
@@ -173,8 +186,8 @@ def ask_agent(question: str, conn, embed_model, llm_model: Optional[str] = None,
     passages = Passages()
     trace: List[dict] = []
     t_llm = t_tools = 0.0
-    llm_calls = 0
-    final = None
+    llm_calls = searches = nudges = 0
+    final = gave_up = None
 
     for step in range(max_steps + 1):
         last_turn = step == max_steps
@@ -187,7 +200,15 @@ def ask_agent(question: str, conn, embed_model, llm_model: Optional[str] = None,
         llm_calls += 1
         calls = msg.get("tool_calls") or []
         if not calls:
-            final = strip_thinking(msg.get("content"))
+            text = strip_thinking(msg.get("content"))
+            if searches == 0 and not last_turn:
+                # search-first rule, enforced in code: an answer (or refusal) written without
+                # looking at a single passage is sent back
+                nudges += 1
+                messages += [{"role": "assistant", "content": text},
+                             {"role": "user", "content": SEARCH_FIRST}]
+                continue
+            final = text
             break
         # echo the assistant turn back, with ids on every call (some servers omit them)
         for i, c in enumerate(calls):
@@ -195,28 +216,45 @@ def ask_agent(question: str, conn, embed_model, llm_model: Optional[str] = None,
             c.setdefault("type", "function")
         messages.append({"role": "assistant", "content": msg.get("content") or "",
                          "tool_calls": calls})
-        for c in calls:
+        # searches first, so "search + cannot_answer" in one turn counts the search
+        for c in sorted(calls, key=lambda c: c.get("function", {}).get("name") == "cannot_answer"):
             fn = c.get("function", {})
             name, args = fn.get("name", ""), parse_args(fn.get("arguments"))
             t0 = time.time()
-            text, ids = run_tool(name, args, conn, embed_model, paper_ids, retrieval, passages)
+            if name == "cannot_answer":
+                if searches:
+                    gave_up = str(args.get("reason", "")).strip()
+                    text, ids = "Noted.", []
+                else:
+                    text, ids = "Error: " + SEARCH_FIRST, []
+            else:
+                text, ids = run_tool(name, args, conn, embed_model, paper_ids, retrieval, passages)
+                if not text.startswith("Error"):
+                    searches += 1
             t_tools += time.time() - t0
             trace.append({"step": step + 1, "tool": name, "args": args, "returned": ids,
                           **({"error": text} if text.startswith("Error") else {})})
             messages.append({"role": "tool", "tool_call_id": c["id"], "content": text})
+        if gave_up is not None:
+            # a structured refusal: the flag comes from the tool call, not from matching text
+            final = (NOT_FOUND + " " + gave_up).strip()
+            break
 
     final = final or NOT_FOUND
     cited = cited_numbers(final, len(passages.hits))
     return {
         "question": question,
         "answer": final,
-        "not_found": NOT_FOUND.lower().rstrip(".") in final.lower(),
+        "not_found": gave_up is not None or NOT_FOUND.lower().rstrip(".") in final.lower(),
+        "gave_up": gave_up is not None,        # refused through the cannot_answer tool
+        "searched": searches > 0,
+        "nudges": nudges,                      # answers sent back by the search-first rule
         "cited": cited,
         "sources": [{k: v for k, v in h.items() if k != "text"} for h in passages.hits],
         "hits": passages.hits,                 # with text, for the evaluator
         "llm_model": model,
         "retrieval": "agent",
-        "steps": len({t["step"] for t in trace}),
+        "steps": len({t["step"] for t in trace if t["tool"] != "cannot_answer"}),
         "llm_calls": llm_calls,
         "trace": trace,
         "seconds": {"retrieval": round(t_tools, 2), "llm": round(t_llm, 2)},
