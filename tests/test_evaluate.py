@@ -1,4 +1,6 @@
 """evaluate.py: answer matching, verdicts and the summary - with fake retrieval and LLM."""
+import json
+
 import pytest
 
 import answer
@@ -150,3 +152,36 @@ def test_refusal_is_not_scored_for_facts(monkeypatch, multi_search):
 def test_single_evidence_question_has_no_parts_field(fake_search):
     res = evaluate.run_one(QUESTION, None, None, top_k=2, llm_model=None, retrieval_only=True)
     assert "parts_found" not in res
+
+
+# ----------------------------------------------------------------------------- --rescore
+class FakeTextConn:
+    """Answers rescore()'s single SELECT chunk_id, text query from a dict."""
+    def __init__(self, texts):
+        self.texts = texts
+
+    def execute(self, sql, params):
+        texts = self.texts
+
+        class Result:
+            def fetchall(self):
+                return [(cid, texts[cid]) for cid in params[0] if cid in texts]
+        return Result()
+
+
+def test_rescore_applies_new_evidence_without_new_llm_calls(tmp_path, monkeypatch):
+    saved = {"llm_model": "fake", "top_k": 2, "summary": {}, "results": [{
+        "id": "L1", "type": "lookup", "question": "How many regions?", "expected": "29",
+        "retrieved": ["paper:0003", "paper:0026"], "hit_rank": None,
+        "answer": "29 regions [2].", "cited": [2], "not_found": False, "seconds_llm": 1.0,
+        "verdict": "unsupported"}]}
+    path = tmp_path / "eval_fake_k2.json"
+    path.write_text(json.dumps(saved), encoding="utf-8")
+    monkeypatch.setattr(answer, "ask", lambda *a, **k: pytest.fail("rescore must not call the LLM"))
+    conn = FakeTextConn({"paper:0003": "Unrelated.", "paper:0026": "a Bonferroni correction for 29 regions"})
+
+    out = evaluate.rescore(path, [QUESTION], conn)          # QUESTION's evidence is in paper:0026
+    r = json.loads(out.read_text(encoding="utf-8"))["results"][0]
+    assert out.name == "eval_fake_k2_rescored.json"
+    assert r["hit_rank"] == 2 and r["verdict"] == "correct" and r["cited_gold"] is True
+    assert r["answer"] == "29 regions [2]."                   # the saved answer is kept as it was

@@ -97,6 +97,23 @@ def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
                       retrieved=[r["chunk_id"] for r in retrieved],
                       seconds_retrieval=round(time.time() - t0, 2))
 
+    texts = {r["chunk_id"]: r["text"] for r in retrieved}
+    if retrieval_only:
+        return score(q, res, texts)
+
+    result = ask_with_retry(q["question"], conn, embed_model, top_k, llm_model, retrieval)
+    res.update(answer=result["answer"], cited=result["cited"], not_found=result["not_found"],
+               seconds_llm=result["seconds"]["llm"], llm_model=result["llm_model"])
+    return score(q, res, texts)
+
+
+def score(q: dict, res: dict, texts: Dict[str, str]) -> dict:
+    """Score one result in place: where the evidence was retrieved and, if the result has an
+    answer, the verdict. `texts` maps the retrieved chunk ids to their text. Used by live runs
+    and by --rescore, so a scoring change can be applied to saved answers without new LLM calls."""
+    for key in ("hit_rank", "parts_found", "cited_gold", "facts_matched", "verdict"):
+        res.pop(key, None)
+    retrieved = [{"n": i, "text": texts[cid]} for i, cid in enumerate(res["retrieved"], start=1)]
     parts = evidence_parts(q)
     # for each required part: the ranks of the retrieved chunks that contain it
     part_ns = [{r["n"] for r in retrieved if contains_evidence(r["text"], part)} for part in parts]
@@ -105,29 +122,23 @@ def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
     res["hit_rank"] = max(min(ns) for ns in part_ns) if found else None
     if len(parts) > 1:
         res["parts_found"] = "{}/{}".format(sum(bool(ns) for ns in part_ns), len(parts))
-
-    if retrieval_only:
+    if "answer" not in res:                       # retrieval-only result
         return res
 
-    result = ask_with_retry(q["question"], conn, embed_model, top_k, llm_model, retrieval)
-    ans = result["answer"]
-    res.update(answer=ans, cited=result["cited"], not_found=result["not_found"],
-               seconds_llm=result["seconds"]["llm"], llm_model=result["llm_model"])
-
     if q["type"] == "unanswerable":
-        res["verdict"] = "correct" if result["not_found"] else "wrong (answered)"
+        res["verdict"] = "correct" if res["not_found"] else "wrong (answered)"
         return res
 
     groups = q["must_include"]
     # the answer must cite, for every required part, a source that contains it
-    res["cited_gold"] = bool(part_ns) and all(any(n in ns for n in result["cited"]) for ns in part_ns)
-    if result["not_found"]:
+    res["cited_gold"] = bool(part_ns) and all(any(n in ns for n in res["cited"]) for ns in part_ns)
+    if res["not_found"]:
         # a refusal often explains what it did find ("the sources mention MD, but..."):
         # those keywords are not an answer, so facts are not scored
         res["facts_matched"] = "-"
         res["verdict"] = "refused" if found else "refused (not retrieved)"
         return res
-    matched = score_answer(ans, groups)
+    matched = score_answer(res["answer"], groups)
     res["facts_matched"] = "{}/{}".format(matched, len(groups))
     if matched == len(groups) and not found:
         # right words, but the passages that support them were not in the context:
@@ -140,6 +151,34 @@ def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
     else:
         res["verdict"] = "wrong"
     return res
+
+
+def rescore(path: Path, questions: List[dict], conn) -> Path:
+    """Re-score a saved results file with the current questions and scoring rules - no search,
+    no LLM calls: the saved retrieved chunk ids and answers are kept as they were. Writes
+    <name>_rescored.json next to the original and returns its path."""
+    data = json.load(open(path, encoding="utf-8"))
+    by_id = {q["id"]: q for q in questions}
+    ids = sorted({cid for r in data["results"] for cid in r["retrieved"]})
+    texts = dict(conn.execute("SELECT chunk_id, text FROM chunks WHERE chunk_id = ANY(%s)",
+                              (ids,)).fetchall())
+    missing = set(ids) - set(texts)
+    if missing:
+        sys.exit("chunks no longer in the database: {}".format(", ".join(sorted(missing)[:5])))
+    changed = []
+    for r in data["results"]:
+        before = (r.get("hit_rank"), r.get("verdict"))
+        score(by_id[r["id"]], r, texts)
+        if (r.get("hit_rank"), r.get("verdict")) != before:
+            changed.append("{} {}/{} -> {}/{}".format(r["id"], *before, r.get("hit_rank"), r.get("verdict")))
+    data["summary"] = summarise(data["results"], data["top_k"], data.get("llm_model") is None)
+    data["rescored"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    out = path.with_name(path.stem + "_rescored.json")
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print("{}\n  changed: {}".format(path.name, "; ".join(changed) or "nothing"))
+    print_summary(data["summary"])
+    return out
 
 
 def ask_with_retry(question, conn, embed_model, top_k, llm_model, retrieval=None, tries: int = 4) -> dict:
@@ -205,6 +244,8 @@ def main() -> None:
     ap.add_argument("--only", default="", help="comma-separated question ids, e.g. L1,F3")
     ap.add_argument("--sleep", type=float, default=0.0, help="seconds to wait between questions")
     ap.add_argument("--out-dir", type=Path, default=Path("results"))
+    ap.add_argument("--rescore", type=Path, nargs="+", metavar="RESULTS_JSON",
+                    help="re-score saved results with the current questions (no search, no LLM)")
     args = ap.parse_args()
 
     try:
@@ -213,6 +254,13 @@ def main() -> None:
         pass
 
     questions = [json.loads(line) for line in open(args.questions, encoding="utf-8") if line.strip()]
+    if args.rescore:
+        import psycopg
+        from search import DSN
+        with psycopg.connect(DSN, connect_timeout=5) as conn:
+            for path in args.rescore:
+                print("saved to {}\n".format(rescore(path, questions, conn)))
+        return
     if args.only:
         wanted = {x.strip() for x in args.only.split(",")}
         questions = [q for q in questions if q["id"] in wanted]
