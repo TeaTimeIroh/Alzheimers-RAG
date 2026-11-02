@@ -26,7 +26,7 @@ ROWS = [  # what search.search() returns: id, title, year, section, p0, p1, text
 @pytest.fixture
 def fake_search(monkeypatch):
     import search
-    monkeypatch.setattr(search, "search", lambda q, model, conn, k, mode=None: ROWS[:k])
+    monkeypatch.setattr(search, "search", lambda q, model, conn, k, mode=None, cap=None: ROWS[:k])
 
 
 # ----------------------------------------------------------------------------- citations

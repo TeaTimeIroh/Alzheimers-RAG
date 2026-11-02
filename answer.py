@@ -142,14 +142,14 @@ def cited_numbers(answer: str, n_sources: int) -> List[int]:
 
 
 def ask(question: str, conn, embed_model, top_k: int = 5, llm_model: Optional[str] = None,
-        retrieval: Optional[str] = None) -> dict:
+        retrieval: Optional[str] = None, max_per_paper: Optional[int] = None) -> dict:
     """Retrieve, prompt, answer. Returns everything the CLI, the API and the evaluation need.
     retrieval: vector | keyword | hybrid (default: RETRIEVAL from .env, else hybrid)."""
     from search import default_mode, search      # same retrieval code as search.py
 
     retrieval = retrieval or default_mode()
     t0 = time.time()
-    rows = search(question, embed_model, conn, top_k, retrieval)
+    rows = search(question, embed_model, conn, top_k, retrieval, max_per_paper)
     t_retrieval = time.time() - t0
     hits = []
     for n, (cid, title, year, section, p0, p1, text, score) in enumerate(rows, start=1):
@@ -183,6 +183,8 @@ def main() -> None:
     ap.add_argument("--top-k", type=int, default=5)
     ap.add_argument("--retrieval", choices=("vector", "keyword", "hybrid"), default=None,
                     help="overrides RETRIEVAL from .env (default: hybrid)")
+    ap.add_argument("--max-per-paper", type=int, default=None,
+                    help="at most this many passages from one paper (default: no cap)")
     ap.add_argument("--embed-model", default=None, help="must match embed_store.py (default: BGE small)")
     ap.add_argument("--llm-model", default=None, help="overrides LLM_MODEL")
     ap.add_argument("--show-prompt", action="store_true", help="print exactly what the LLM received")
@@ -210,7 +212,8 @@ def main() -> None:
         embed_model = SentenceTransformer(args.embed_model or DEFAULT_MODEL)
         with psycopg.connect(DSN) as conn:
             register_vector(conn)
-            result = ask(args.question, conn, embed_model, args.top_k, args.llm_model, args.retrieval)
+            result = ask(args.question, conn, embed_model, args.top_k, args.llm_model, args.retrieval,
+                         args.max_per_paper)
     except LLMError as e:
         sys.exit("LLM error: {}".format(e))
 

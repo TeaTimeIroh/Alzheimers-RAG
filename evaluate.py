@@ -86,11 +86,12 @@ def is_gold(chunk: dict, q: dict) -> bool:
 
 # ----------------------------------------------------------------------------- one question
 def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
-            retrieval_only: bool, retrieval: Optional[str] = None) -> dict:
+            retrieval_only: bool, retrieval: Optional[str] = None,
+            max_per_paper: Optional[int] = None) -> dict:
     from search import search
 
     t0 = time.time()
-    rows = search(q["question"], embed_model, conn, top_k, retrieval)
+    rows = search(q["question"], embed_model, conn, top_k, retrieval, max_per_paper)
     retrieved = [{"n": i, "chunk_id": r[0], "score": round(float(r[7]), 3), "text": r[6]}
                  for i, r in enumerate(rows, start=1)]
     res = OrderedDict(id=q["id"], type=q["type"], question=q["question"], expected=q["expected"],
@@ -101,7 +102,8 @@ def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
     if retrieval_only:
         return score(q, res, texts)
 
-    result = ask_with_retry(q["question"], conn, embed_model, top_k, llm_model, retrieval)
+    result = ask_with_retry(q["question"], conn, embed_model, top_k, llm_model, retrieval,
+                            max_per_paper)
     res.update(answer=result["answer"], cited=result["cited"], not_found=result["not_found"],
                seconds_llm=result["seconds"]["llm"], llm_model=result["llm_model"])
     return score(q, res, texts)
@@ -168,6 +170,7 @@ def rescore(path: Path, questions: List[dict], conn) -> Path:
     changed = []
     for r in data["results"]:
         before = (r.get("hit_rank"), r.get("verdict"))
+        r["question"], r["expected"] = by_id[r["id"]]["question"], by_id[r["id"]]["expected"]
         score(by_id[r["id"]], r, texts)
         if (r.get("hit_rank"), r.get("verdict")) != before:
             changed.append("{} {}/{} -> {}/{}".format(r["id"], *before, r.get("hit_rank"), r.get("verdict")))
@@ -181,11 +184,12 @@ def rescore(path: Path, questions: List[dict], conn) -> Path:
     return out
 
 
-def ask_with_retry(question, conn, embed_model, top_k, llm_model, retrieval=None, tries: int = 4) -> dict:
+def ask_with_retry(question, conn, embed_model, top_k, llm_model, retrieval=None,
+                   max_per_paper=None, tries: int = 4) -> dict:
     """Free tiers answer 429 (rate limit) or 503 (overloaded) now and then: wait and retry."""
     for attempt in range(tries):
         try:
-            return answer.ask(question, conn, embed_model, top_k, llm_model, retrieval)
+            return answer.ask(question, conn, embed_model, top_k, llm_model, retrieval, max_per_paper)
         except answer.LLMError as e:
             transient = re.search(r"\((429|500|502|503|504)\)", str(e))
             if not transient or attempt == tries - 1:
@@ -241,6 +245,8 @@ def main() -> None:
     ap.add_argument("--retrieval-only", action="store_true", help="skip the LLM, score retrieval")
     ap.add_argument("--retrieval", choices=("vector", "keyword", "hybrid"), default=None,
                     help="search mode (default: RETRIEVAL from .env, else hybrid)")
+    ap.add_argument("--max-per-paper", type=int, default=None,
+                    help="at most this many passages from one paper (default: no cap)")
     ap.add_argument("--only", default="", help="comma-separated question ids, e.g. L1,F3")
     ap.add_argument("--sleep", type=float, default=0.0, help="seconds to wait between questions")
     ap.add_argument("--out-dir", type=Path, default=Path("results"))
@@ -280,8 +286,9 @@ def main() -> None:
     retrieval = args.retrieval or default_mode()
 
     results = []
-    print("{} questions, top-k {}, {} search, LLM: {}\n".format(
+    print("{} questions, top-k {}, {} search{}, LLM: {}\n".format(
         len(questions), args.top_k, retrieval,
+        ", max {} per paper".format(args.max_per_paper) if args.max_per_paper else "",
         "none (retrieval only)" if args.retrieval_only else llm_model))
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
@@ -289,7 +296,8 @@ def main() -> None:
             if i and args.sleep:
                 time.sleep(args.sleep)
             try:
-                r = run_one(q, conn, embed_model, args.top_k, llm_model, args.retrieval_only, retrieval)
+                r = run_one(q, conn, embed_model, args.top_k, llm_model, args.retrieval_only, retrieval,
+                            args.max_per_paper)
             except answer.LLMError as e:
                 sys.exit("LLM error on {}: {}".format(q["id"], e))
             results.append(r)
@@ -309,10 +317,13 @@ def main() -> None:
     tag = "retrieval" if args.retrieval_only else re.sub(r"[^\w.-]+", "_", llm_model)
     if retrieval != "vector":          # vector-search files keep the old names, for comparison
         tag += "_" + retrieval
+    if args.max_per_paper:
+        tag += "_cap{}".format(args.max_per_paper)
     out = args.out_dir / "eval_{}_k{}_{}.json".format(tag, args.top_k,
                                                       datetime.now().strftime("%Y%m%d-%H%M"))
     with open(out, "w", encoding="utf-8") as f:
         json.dump({"llm_model": llm_model, "retrieval": retrieval, "top_k": args.top_k,
+                   "max_per_paper": args.max_per_paper,
                    "summary": summary,
                    "results": results}, f, ensure_ascii=False, indent=2)
     print("\nfull answers saved to {}  (review the partial/wrong ones by hand)".format(out))

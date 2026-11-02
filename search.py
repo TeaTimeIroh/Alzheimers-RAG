@@ -81,7 +81,7 @@ def rrf(rankings: Sequence[Sequence[str]], k: int = RRF_K) -> List[Tuple[str, fl
     return sorted(scores.items(), key=lambda item: -item[1])   # sorted() is stable
 
 
-def hybrid_search(query: str, model, conn, k: int) -> List[tuple]:
+def hybrid_search(query: str, model, conn, k: Optional[int]) -> List[tuple]:
     vec = vector_search(query, model, conn, CANDIDATES)
     kw = keyword_search(query, conn, CANDIDATES)
     rows = {r[0]: r[:-1] for r in vec + kw}                 # chunk_id -> row without its score
@@ -94,17 +94,43 @@ def default_mode() -> str:
     return os.environ.get("RETRIEVAL", "hybrid").strip().lower() or "hybrid"
 
 
-def search(query: str, model, conn, top_k: int = 5, mode: Optional[str] = None) -> List[tuple]:
+def paper_of(chunk_id: str) -> str:
+    """'awz206:0003' -> 'awz206' (chunk ids are <doc_id>:<number>)."""
+    return chunk_id.rsplit(":", 1)[0]
+
+
+def cap_per_paper(rows: Sequence[tuple], max_per_paper: int) -> List[tuple]:
+    """Keep the ranking, but at most `max_per_paper` passages from any one paper, so that a
+    question about two studies isn't answered from five passages of the same one."""
+    counts: Dict[str, int] = {}
+    kept = []
+    for row in rows:
+        paper = paper_of(row[0])
+        if counts.get(paper, 0) < max_per_paper:
+            counts[paper] = counts.get(paper, 0) + 1
+            kept.append(row)
+    return kept
+
+
+def search(query: str, model, conn, top_k: int = 5, mode: Optional[str] = None,
+           max_per_paper: Optional[int] = None) -> List[tuple]:
     """Rows of (chunk_id, title, year, section, page_start, page_end, text, score), best first.
-    The score depends on the mode (cosine similarity, ts_rank or RRF): only the order matters."""
+    The score depends on the mode (cosine similarity, ts_rank or RRF): only the order matters.
+    max_per_paper: optional cap on passages from one paper (off by default)."""
     mode = mode or default_mode()
+    if mode not in MODES:
+        raise ValueError("retrieval mode must be one of {}, not {!r}".format(MODES, mode))
+    # with a cap, rank a larger pool first so there is something left to fill the freed slots
+    pool = top_k if not max_per_paper else max(CANDIDATES, top_k)
     if mode == "vector":
-        return vector_search(query, model, conn, top_k)
-    if mode == "keyword":
-        return keyword_search(query, conn, top_k)
-    if mode == "hybrid":
-        return hybrid_search(query, model, conn, top_k)
-    raise ValueError("retrieval mode must be one of {}, not {!r}".format(MODES, mode))
+        rows = vector_search(query, model, conn, pool)
+    elif mode == "keyword":
+        rows = keyword_search(query, conn, pool)
+    else:
+        rows = hybrid_search(query, model, conn, pool if not max_per_paper else None)
+    if max_per_paper:
+        rows = cap_per_paper(rows, max_per_paper)
+    return rows[:top_k]
 
 
 def main() -> None:
@@ -118,6 +144,8 @@ def main() -> None:
     ap.add_argument("query")
     ap.add_argument("--top-k", type=int, default=5)
     ap.add_argument("--retrieval", choices=MODES, default=default_mode())
+    ap.add_argument("--max-per-paper", type=int, default=None,
+                    help="at most this many passages from one paper (default: no cap)")
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--show-text", action="store_true", help="print the full chunk text")
     args = ap.parse_args()
@@ -126,7 +154,8 @@ def main() -> None:
     with psycopg.connect(DSN, connect_timeout=5) as conn:
         register_vector(conn)
         for rank, (cid, title, year, section, p0, p1, text, score) in enumerate(
-                search(args.query, model, conn, args.top_k, args.retrieval), start=1):
+                search(args.query, model, conn, args.top_k, args.retrieval, args.max_per_paper),
+                start=1):
             print("\n#{}  score {:.3f}  {}".format(rank, score, cid))
             print("    {} ({})".format(title[:90], year))
             print("    section: {}   pages {}-{}".format(section, p0, p1))
