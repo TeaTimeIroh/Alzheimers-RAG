@@ -1,0 +1,807 @@
+{
+  "llm_model": "qwen3-coder-30b-a3b-instruct",
+  "top_k": 5,
+  "summary": {
+    "finding": {
+      "n": 11,
+      "hit@5": 11,
+      "hit@1": 4,
+      "MRR": 0.636,
+      "correct": 11,
+      "unsupported": 0,
+      "partial": 0,
+      "wrong": 0,
+      "refused": 0,
+      "cited right source": 11,
+      "avg LLM s": 26.1
+    },
+    "lookup": {
+      "n": 11,
+      "hit@5": 10,
+      "hit@1": 6,
+      "MRR": 0.682,
+      "correct": 9,
+      "unsupported": 0,
+      "partial": 0,
+      "wrong": 1,
+      "refused": 1,
+      "cited right source": 10,
+      "avg LLM s": 15.8
+    },
+    "multi": {
+      "n": 2,
+      "hit@5": 0,
+      "hit@1": 0,
+      "MRR": 0.0,
+      "correct": 0,
+      "unsupported": 1,
+      "partial": 0,
+      "wrong": 0,
+      "refused": 1,
+      "cited right source": 0,
+      "avg LLM s": 16.9
+    },
+    "unanswerable": {
+      "n": 6,
+      "correct": 6,
+      "unsupported": 0,
+      "partial": 0,
+      "wrong": 0,
+      "refused": 0,
+      "avg LLM s": 12.4
+    },
+    "all answerable": {
+      "n": 24,
+      "hit@5": 21,
+      "hit@1": 10,
+      "MRR": 0.604,
+      "correct": 20,
+      "unsupported": 1,
+      "partial": 0,
+      "wrong": 1,
+      "refused": 2,
+      "cited right source": 21,
+      "avg LLM s": 20.6
+    }
+  },
+  "results": [
+    {
+      "id": "F1",
+      "type": "finding",
+      "question": "In the sex-stratified GWAS of Alzheimer's neuropathology, which genetic variant was associated with neurofibrillary tangles only in males?",
+      "expected": "rs34331204 (chromosome 7): associated with tangles in males (P = 2.5e-8) but not females.",
+      "retrieved": [
+        "awz206:0000",
+        "awz206:0012",
+        "awz206:0008",
+        "awz206:0009",
+        "awz206:0010"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 1,
+      "answer": "In the sex-stratified GWAS of Alzheimer's neuropathology, the genetic variant rs34331204 on chromosome 7 was associated with neurofibrillary tangles only in males [1][3]. This SNP reached genome-wide significance in males (P = 2.48 � 10�8) but not in females (P = 0.85), and showed a sex interaction effect (P = 2.93 � 10�4) [3].",
+      "cited": [
+        1,
+        3
+      ],
+      "not_found": false,
+      "seconds_llm": 26.62,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "1/1",
+      "verdict": "correct"
+    },
+    {
+      "id": "F2",
+      "type": "finding",
+      "question": "Which blood sample handling factor changed the measured values of every plasma biomarker that was tested?",
+      "expected": "The blood collection tube type.",
+      "retrieved": [
+        "ALZ-18-1484:0011",
+        "ALZ-18-1484:0026",
+        "ALZ-18-1484:0000",
+        "ALZ-18-1484:0001",
+        "ALZ-18-1484:0004"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 3,
+      "answer": "The blood sample handling factor that changed the measured values of every plasma biomarker tested was the collection tube type [3].",
+      "cited": [
+        3
+      ],
+      "not_found": false,
+      "seconds_llm": 9.42,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "1/1",
+      "verdict": "correct"
+    },
+    {
+      "id": "F3",
+      "type": "finding",
+      "question": "Which existing drugs did the in silico drug-repositioning study propose as possible BACE-1 inhibitors?",
+      "expected": "Fluphenazine, Naratriptan, Bazedoxifene, Frovatriptan and Raloxifene.",
+      "retrieved": [
+        "ijms-24-08164:0023",
+        "ijms-24-08164:0013",
+        "ijms-24-08164:0000",
+        "ijms-24-08164:0008",
+        "ijms-24-08164:0003"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 3,
+      "answer": "The in silico drug-repositioning study proposed five existing drugs as possible BACE-1 inhibitors: Fluphenazine, Naratriptan, Bazedoxifene, Frovatriptan, and Raloxifene [3].",
+      "cited": [
+        3
+      ],
+      "not_found": false,
+      "seconds_llm": 18.88,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "5/5",
+      "verdict": "correct"
+    },
+    {
+      "id": "F4",
+      "type": "finding",
+      "question": "In the Cardiovascular Health Study cohort, how were the CLU, CR1 and PICALM risk genes related to cognitive decline?",
+      "expected": "CLU and CR1: more rapid cognitive decline. PICALM: earlier age at midpoint of decline.",
+      "retrieved": [
+        "nihms444967:0016",
+        "nihms444967:0000",
+        "nihms444967:0010",
+        "nihms444967:0015",
+        "nihms444967:0011"
+      ],
+      "seconds_retrieval": 0.03,
+      "hit_rank": 2,
+      "answer": "In the Cardiovascular Health Study cohort, genetic variations in CLU, CR1, and PICALM were associated with different aspects of cognitive decline trajectories.\n\nCLU SNP rs11136000 was linked to more rapid cognitive decline on the 3MS and nearly reached significance for the DSST [3]. This association remained significant even after accounting for APOE genotype, age, sex, and education [3].\n\nCR1 SNP rs3818361 was associated with more rapid cognitive decline on the DSST [3]. The study found that this association did not differ between individuals who did or did not carry an APOE ε4 allele [3]. CR1 is a complement receptor expressed in the cerebral cortex, and its genetic variants may influence the complement cascade involved in synapse elimination during neurodegeneration [4].\n\nPICALM SNP rs541458 was associated with an earlier age at midpoint of cognitive decline for the 3MS but not with rate of decline, and it was not associated with either parameter for the DSST [3]. This association did not persist in additive models [4], although PICALM encodes a protein involved in clathrin-mediated endocytosis which may affect Aβ clearance from the brain [4].\n\nIt should be noted that while rs3851179 in PICALM was evaluated, it was not associated with change in either parameter for the 3MS or DSST [3]. Additionally, although CLU and CR1 associations with AD risk did not display confounding with APOE genotype, PICALM's association with AD risk is reduced when accounting for APOE status [1].\n\nThe study concluded that evaluating cognitive trajectories provides a powerful approach to dissecting genetic effects on the processes leading to cognitive deterioration and Alzheimer’s disease [2].",
+      "cited": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "not_found": false,
+      "seconds_llm": 66.38,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "5/5",
+      "verdict": "correct"
+    },
+    {
+      "id": "F5",
+      "type": "finding",
+      "question": "Does the lysosomal and autophagic dysfunction caused by C99 accumulation depend on amyloid-beta?",
+      "expected": "No - the effect was Aβ-independent (it even worsened when γ-secretase was inhibited).",
+      "retrieved": [
+        "401_2016_Article_1577:0003",
+        "401_2016_Article_1577:0000",
+        "401_2016_Article_1577:0046",
+        "401_2016_Article_1577:0043",
+        "401_2016_Article_1577:0048"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 2,
+      "answer": "No, the lysosomal and autophagic dysfunction caused by C99 accumulation does not depend on amyloid-beta. The study demonstrates that the effects of C99 are Aβ-independent [2]. In fact, pharmacological inhibition of γ-secretase, which increases C99 levels, exacerbated the pathology even further, showing a C99 dose-dependent effect without involvement of Aβ [1]. Additionally, no effect was observed in inhibitor-treated wild-type animals, suggesting that lysosomal dysfunction was directly linked to C99 accumulation rather than Aβ production [2].",
+      "cited": [
+        1,
+        2
+      ],
+      "not_found": false,
+      "seconds_llm": 25.02,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "1/1",
+      "verdict": "correct"
+    },
+    {
+      "id": "F6",
+      "type": "finding",
+      "question": "Which type of soluble amyloid-beta oligomer was elevated in the brains of Alzheimer's patients, and which antibody detected it?",
+      "expected": "Fibrillar oligomers, detected by the OC antibody (not prefibrillar/A11 oligomers).",
+      "retrieved": [
+        "nihms123378:0003",
+        "nihms123378:0008",
+        "nihms123378:0004",
+        "nihms123378:0011",
+        "nihms123378:0010"
+      ],
+      "seconds_retrieval": 0.03,
+      "hit_rank": 3,
+      "answer": "Soluble fibrillar oligomers were elevated in the brains of Alzheimer's patients. The OC antibody detected these fibrillar oligomers [3].",
+      "cited": [
+        3
+      ],
+      "not_found": false,
+      "seconds_llm": 11.57,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "2/2",
+      "verdict": "correct"
+    },
+    {
+      "id": "F7",
+      "type": "finding",
+      "question": "What lipid change did the shotgun-lipidomics work find in the brains of people with very mild Alzheimer's disease?",
+      "expected": "A specific depletion of sulfatides (myelin sphingolipids) at the earliest clinically recognisable stage.",
+      "retrieved": [
+        "nihms35300:0002",
+        "nihms35300:0010",
+        "nihms35300:0006",
+        "nihms35300:0007",
+        "nihms35300:0003"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 2,
+      "answer": "The shotgun lipidomics study found that individuals with very mild Alzheimer's disease experienced a substantial loss of sulfatide, which is a type of specialized myelin glycosphingolipid. Specifically, there was a dramatic depletion of sulfatide content—up to 90% in gray matter and approximately 50% in white matter—in all examined cerebral regions including the cerebrum (frontal, parietal, temporal) and cerebellum [2]. Additionally, the study observed a large content increase and molecular species compositional change in ceramide, which is associated with cell death [1]. No significant alterations were found in other lipid classes such as GPCho, diacyl GPEtn, pGPEtn, phosphatidylinositol, phosphatidylserine, sphingomyelin, cerebrosides, free fatty acid, and cholesterol [2].",
+      "cited": [
+        1,
+        2
+      ],
+      "not_found": false,
+      "seconds_llm": 34.19,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "1/1",
+      "verdict": "correct"
+    },
+    {
+      "id": "F8",
+      "type": "finding",
+      "question": "What can degrade the quality of diffusion tensor imaging maps in studies of prodromal Alzheimer's disease?",
+      "expected": "Artifacts from motion, magnetic susceptibility and eddy-current-induced distortions.",
+      "retrieved": [
+        "CNS-20-3:0000",
+        "CNS-20-3:0001",
+        "CNS-20-3:0007",
+        "CNS-20-3:0005",
+        "CNS-20-3:0018"
+      ],
+      "seconds_retrieval": 0.03,
+      "hit_rank": 1,
+      "answer": "The quality of diffusion tensor imaging (DTI) maps can be degraded by artifacts of motion, susceptibility, and eddy current-induced distortions [1]. These artifacts can affect the parameter maps used in DTI analysis [3]. Additionally, cardiac pulsations can cause focal artifacts, particularly in areas such as the brain stem, which may necessitate cardiac gating during acquisition to reduce their effects [4]. Other potential issues include coverage problems and image misalignment artifacts that are typically identified through visual assessment or algorithmic methods [3].",
+      "cited": [
+        1,
+        3,
+        4
+      ],
+      "not_found": false,
+      "seconds_llm": 19.95,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "3/3",
+      "verdict": "correct"
+    },
+    {
+      "id": "F9",
+      "type": "finding",
+      "question": "Which animal does the review on neural stem cells propose for studying how the brain might replace lost neurons in Alzheimer's disease, and what makes it suitable?",
+      "expected": "Zebrafish, because its adult brain has an extensive regenerative / neurogenic ability.",
+      "retrieved": [
+        "yjbm_89_1_23:0001",
+        "yjbm_89_1_23:0000",
+        "yjbm_89_1_23:0013",
+        "yjbm_89_1_23:0003",
+        "yjbm_89_1_23:0014"
+      ],
+      "seconds_retrieval": 0.03,
+      "hit_rank": 2,
+      "answer": "The review proposes zebrafish as a useful model organism for studying how the brain might replace lost neurons in Alzheimer's disease [2]. Zebrafish are suitable because they have extensive regenerative ability in the brain, which can help address the molecular programs needed for neural stem/progenitor cells (NSPCs) to respond to neurodegeneration by enhanced neurogenesis [2].",
+      "cited": [
+        2
+      ],
+      "not_found": false,
+      "seconds_llm": 19.48,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "2/2",
+      "verdict": "correct"
+    },
+    {
+      "id": "F10",
+      "type": "finding",
+      "question": "When CT is used in a dementia work-up, what is its main purpose?",
+      "expected": "To rule out surgically treatable causes of dementia such as tumours and subdural haemorrhage.",
+      "retrieved": [
+        "nihms583318:0005",
+        "nihms583318:0016",
+        "ALZ-20-e091460:0000",
+        "NRI2012-517876:0017",
+        "nihms583318:0018"
+      ],
+      "seconds_retrieval": 0.01,
+      "hit_rank": 1,
+      "answer": "When CT is used in a dementia work-up, its main purpose is to rule out potentially surgically treatable causes of dementia such as tumors and sub-dural hemorrhage [1].",
+      "cited": [
+        1
+      ],
+      "not_found": false,
+      "seconds_llm": 11.88,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "2/2",
+      "verdict": "correct"
+    },
+    {
+      "id": "F11",
+      "type": "finding",
+      "question": "In patients with the behavioural or dysexecutive variant of Alzheimer's disease, was brain atrophy mainly frontal?",
+      "expected": "No - at group level the frontal lobe was relatively spared compared with the temporoparietal regions.",
+      "retrieved": [
+        "awv191:0001",
+        "awv191:0003",
+        "awv191:0002",
+        "awv191:0034",
+        "awv191:0026"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 1,
+      "answer": "No, brain atrophy in patients with the behavioural or dysexecutive variant of Alzheimer's disease was not mainly frontal. Instead, these variants were characterized by temporoparietal-predominant atrophy [1][3]. In voxel-wise contrasts between behavioural and dysexecutive Alzheimer’s disease patients and controls, marked atrophy was found in bilateral temporoparietal regions, with only limited atrophy in the frontal cortex [1]. Furthermore, compared to typical Alzheimer's disease patients, those with behavioural variant FTD showed more frontal atrophy and less posterior involvement, whereas patients with typical Alzheimer's disease were slightly more affected posteriorly and showed less frontal atrophy (P 5 0.001 uncorrected) [1]. In the combined behavioural/dysexecutive Alzheimer’s disease group, a pattern of brain atrophy similar to that observed in typical Alzheimer’s disease patients was seen, with limited atrophy in the frontal cortex [5]. Even when looking specifically at patients initially diagnosed with behavioural variant FTD, while there was more frontal involvement compared to the total behavioural Alzheimer's disease group, temporoparietal atrophy remained predominant [4]. Therefore, the brain atrophy in these variants is primarily located in the temporoparietal regions rather than being mainly frontal.",
+      "cited": [
+        1,
+        3,
+        4,
+        5
+      ],
+      "not_found": false,
+      "seconds_llm": 43.8,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "2/2",
+      "verdict": "correct"
+    },
+    {
+      "id": "L1",
+      "type": "lookup",
+      "question": "In the APOE-stratified GWAS, how many regions of interest were used for the Bonferroni correction?",
+      "expected": "29 (threshold P < 0.05/29 = 0.0017).",
+      "retrieved": [
+        "41588_2026_Article_2713:0024",
+        "41588_2026_Article_2713:0030",
+        "41588_2026_Article_2713:0026",
+        "41588_2026_Article_2713:0001",
+        "41588_2026_Article_2713:0004"
+      ],
+      "seconds_retrieval": 0.03,
+      "hit_rank": 3,
+      "answer": "In the APOE-stratified GWAS, a Bonferroni correction was applied for 29 regions of interest [3].",
+      "cited": [
+        3
+      ],
+      "not_found": false,
+      "seconds_llm": 15.46,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "1/1",
+      "verdict": "correct"
+    },
+    {
+      "id": "L2",
+      "type": "lookup",
+      "question": "How many participants were included in the genome-wide study of cognitive resilience to Alzheimer's neuropathology?",
+      "expected": "5108 participants (one clinical trial and three cohort studies).",
+      "retrieved": [
+        "awaa209:0015",
+        "awaa209:0000",
+        "awaa209:0003",
+        "awaa209:0035",
+        "awaa209:0034"
+      ],
+      "seconds_retrieval": 0.03,
+      "hit_rank": 1,
+      "answer": "The genome-wide association study of cognitive resilience to Alzheimer's neuropathology included 5108 participants [1].",
+      "cited": [
+        1
+      ],
+      "not_found": false,
+      "seconds_llm": 10.58,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "1/1",
+      "verdict": "correct"
+    },
+    {
+      "id": "L3",
+      "type": "lookup",
+      "question": "How many males and how many females were in the pooled autopsy dataset of the study on sex differences in genetic predictors of Alzheimer's pathology?",
+      "expected": "2701 males and 3275 females.",
+      "retrieved": [
+        "awz206:0000",
+        "awz206:0008",
+        "awz206:0003",
+        "awz206:0015",
+        "awz206:0001"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 1,
+      "answer": "The pooled autopsy dataset included 2701 males and 3275 females [1].",
+      "cited": [
+        1
+      ],
+      "not_found": false,
+      "seconds_llm": 12.12,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "2/2",
+      "verdict": "correct"
+    },
+    {
+      "id": "L4",
+      "type": "lookup",
+      "question": "How many Alzheimer's patients, MCI patients and healthy controls took part in the DTI and MR volumetry study of the hippocampus to posterior cingulate circuit?",
+      "expected": "10 AD, 10 MCI and 18 healthy controls.",
+      "retrieved": [
+        "NRI2012-517876:0000",
+        "NRI2012-517876:0002",
+        "NRI2012-517876:0010",
+        "NRI2012-517876:0017",
+        "NRI2012-517876:0005"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 1,
+      "answer": "The study included 10 Alzheimer's disease (AD) patients, 10 mild cognitive impairment (MCI) patients, and 18 healthy controls [1].",
+      "cited": [
+        1
+      ],
+      "not_found": false,
+      "seconds_llm": 16.17,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "2/2",
+      "verdict": "correct"
+    },
+    {
+      "id": "L5",
+      "type": "lookup",
+      "question": "In the survey of how cohorts handle blood samples, what was the longest reported time between blood draw and centrifugation?",
+      "expected": "30 hours (from the results section, not the abstract).",
+      "retrieved": [
+        "ALZ-18-1484:0019",
+        "ALZ-18-1484:0008",
+        "ALZ-18-1484:0020",
+        "ALZ-18-1484:0004",
+        "ALZ-18-1484:0007"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 2,
+      "answer": "The longest reported time between blood draw and centrifugation was 30 hours [2].",
+      "cited": [
+        2
+      ],
+      "not_found": false,
+      "seconds_llm": 11.97,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "1/1",
+      "verdict": "correct"
+    },
+    {
+      "id": "L6",
+      "type": "lookup",
+      "question": "How much hippocampal neuron loss was reported in 10-month-old APP/PS1KI mice?",
+      "expected": ">50% hippocampal neuron loss (from the body text, not the abstract).",
+      "retrieved": [
+        "IJAD2010-723782:0004",
+        "IJAD2010-723782:0006",
+        "IJAD2010-723782:0003",
+        "IJAD2010-723782:0002",
+        "IJAD2010-723782:0008"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 3,
+      "answer": "A significant hippocampal CA1 neuron loss of −14% was reported in 10-month-old APP/PS1KI mice [3].",
+      "cited": [
+        3
+      ],
+      "not_found": false,
+      "seconds_llm": 13.09,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "0/1",
+      "verdict": "wrong"
+    },
+    {
+      "id": "L7",
+      "type": "lookup",
+      "question": "Which cohort study did the participants of the Beijing study on regional amyloid and multi-domain cognition come from?",
+      "expected": "The Beijing Aging Brain Rejuvenation Initiative (BABRI).",
+      "retrieved": [
+        "bhad369:0006",
+        "bhad369:0003",
+        "bhad369:0026",
+        "bhad369:0000",
+        "awaa209:0035"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 1,
+      "answer": "The participants of the Beijing study on regional amyloid and multi-domain cognition came from the Beijing Aging Brain Rejuvenation Initiative (BABRI) [1].",
+      "cited": [
+        1
+      ],
+      "not_found": false,
+      "seconds_llm": 12.73,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "1/1",
+      "verdict": "correct"
+    },
+    {
+      "id": "L8",
+      "type": "lookup",
+      "question": "What percentage of patients with behavioural Alzheimer's disease carried at least one APOE e4 allele?",
+      "expected": "59.5% (vs 40% in dysexecutive Alzheimer's disease).",
+      "retrieved": [
+        "awv191:0033",
+        "41588_2026_Article_2713:0000",
+        "41588_2026_Article_2713:0021",
+        "41588_2026_Article_2713:0028",
+        "awv191:0015"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 1,
+      "answer": "59.5% of patients with behavioural Alzheimer’s disease carried at least one APOE e4 allele [1].",
+      "cited": [
+        1
+      ],
+      "not_found": false,
+      "seconds_llm": 14.78,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "1/1",
+      "verdict": "correct"
+    },
+    {
+      "id": "L9",
+      "type": "lookup",
+      "question": "How many regional amyloid SUVR features were used as inputs to the model that predicts entorhinal tau?",
+      "expected": "126 regional Aβ SUVR features (FreeSurfer cortical and subcortical regions).",
+      "retrieved": [
+        "ALZ-21-e14499:0012",
+        "ALZ-21-e14499:0014",
+        "ALZ-21-e14499:0011",
+        "ALZ-21-e14499:0013",
+        "ALZ-21-e14499:0000"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 3,
+      "answer": "The model that predicts entorhinal tau levels was trained using Aβ SUVR values from 126 ROIs, which spanned the whole brain including cortical and subcortical areas [3]. These 126 regional Aβ SUVR features were used as inputs to the predictive model [3].\n\nThe correlation-based ranking feature selection algorithm identified specific regions that resulted in the highest accuracy for predicting entorhinal tau levels. These included the bilateral rostral middle frontal cortex, bilateral medial orbitofrontal cortex, and nucleus accumbens [4]. However, the total number of regional Aβ SUVR features used as inputs to the model was 126 ROIs [3].\n\nThe final predictive model utilized these 126 regional Aβ SUVR features for training on ADNI data [3], with subsequent evaluation on HABS data [1]. The specific regions identified through feature selection were part of this larger set of 126 ROIs [4].\n\nTherefore, the number of regional amyloid SUVR features used as inputs to the model that predicts entorhinal tau was 126 ROIs [3][4].",
+      "cited": [
+        1,
+        3,
+        4
+      ],
+      "not_found": false,
+      "seconds_llm": 44.57,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "1/1",
+      "verdict": "correct"
+    },
+    {
+      "id": "L10",
+      "type": "lookup",
+      "question": "What prevalence of Alzheimer's disease does the neuroimaging biomarker review report for south India?",
+      "expected": "6.44% (populations above 65 years).",
+      "retrieved": [
+        "nihms583318:0001",
+        "nihms583318:0002",
+        "awv191:0041",
+        "awv191:0010",
+        "nihms583318:0000"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": 1,
+      "answer": "The neuroimaging biomarker review reports a prevalence of 6.44% for South India [1].",
+      "cited": [
+        1
+      ],
+      "not_found": false,
+      "seconds_llm": 11.99,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": true,
+      "facts_matched": "1/1",
+      "verdict": "correct"
+    },
+    {
+      "id": "L11",
+      "type": "lookup",
+      "question": "On average, how long was the interval between diagnosis and autopsy for the behavioural/dysexecutive Alzheimer's patients?",
+      "expected": "60.9 months on average (± 23.8; the ± sign is lost in the PDF text).",
+      "retrieved": [
+        "awv191:0041",
+        "awv191:0009",
+        "awv191:0023",
+        "awv191:0005",
+        "awv191:0007"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": null,
+      "answer": "I could not find this in the provided papers.",
+      "cited": [],
+      "not_found": true,
+      "seconds_llm": 10.42,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": false,
+      "facts_matched": "-",
+      "verdict": "refused (not retrieved)"
+    },
+    {
+      "id": "M1",
+      "type": "multi",
+      "question": "Which amyloid PET tracer was used both in the Beijing study of regional amyloid and cognition and for the ADNI data in the study predicting entorhinal tau?",
+      "expected": "Florbetapir (18F-florbetapir / AV45) in both.",
+      "retrieved": [
+        "ALZ-21-e14499:0004",
+        "awaa209:0005",
+        "ALZ-21-e14499:0007",
+        "ALZ-21-e14499:0009",
+        "ALZ-21-e14499:0000"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": null,
+      "parts_found": "1/2",
+      "answer": "I could not find this in the provided papers.",
+      "cited": [],
+      "not_found": true,
+      "seconds_llm": 9.52,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": false,
+      "facts_matched": "-",
+      "verdict": "refused (not retrieved)"
+    },
+    {
+      "id": "M2",
+      "type": "multi",
+      "question": "Which diffusion measure do both the DTI review of prodromal Alzheimer's disease and the hippocampus to posterior cingulate study report as increased in the hippocampus?",
+      "expected": "Mean diffusivity (MD) - increased in the hippocampus in MCI and AD in both papers.",
+      "retrieved": [
+        "CNS-20-3:0000",
+        "CNS-20-3:0018",
+        "CNS-20-3:0001",
+        "CNS-20-3:0005",
+        "CNS-20-3:0012"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": null,
+      "parts_found": "1/2",
+      "answer": "Both the DTI review of prodromal Alzheimer's disease [1] and the hippocampus to posterior cingulate study [5] report that mean diffusivity (MD) is increased in the hippocampus. The review states that elevated mean diffusivity is consistently found in prodromal AD, including in cognitively normal elderly who progress to MCI [1]. The hippocampus to posterior cingulate study specifically reports that MD increase in the anterior hippocampus predicted the severity of episodic memory impairment in patients with early AD [5], and that left hippocampal MD was higher at baseline in patients with MCI who progressed to AD compared with those who remained stable [5].",
+      "cited": [
+        1,
+        5
+      ],
+      "not_found": false,
+      "seconds_llm": 24.32,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "cited_gold": false,
+      "facts_matched": "1/1",
+      "verdict": "unsupported"
+    },
+    {
+      "id": "U1",
+      "type": "unanswerable",
+      "question": "What is the recommended dose of lecanemab?",
+      "expected": "Not in the papers (lecanemab is never mentioned).",
+      "retrieved": [
+        "ijms-24-08164:0011",
+        "ijms-24-08164:0007",
+        "ijms-24-08164:0018",
+        "ijms-24-08164:0010",
+        "ijms-24-08164:0015"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": null,
+      "answer": "I could not find this in the provided papers.",
+      "cited": [],
+      "not_found": true,
+      "seconds_llm": 14.27,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "verdict": "correct"
+    },
+    {
+      "id": "U2",
+      "type": "unanswerable",
+      "question": "How many participants dropped out of the Dementia-MOVE exercise trial before the six-month follow-up?",
+      "expected": "Not in the papers: the trial abstract gives 46 enrolled patients but no dropout numbers (near-miss question).",
+      "retrieved": [
+        "ALZ-20-e091460:0000",
+        "ALZ-20-e091460:0001",
+        "nihms444967:0013",
+        "nihms444967:0017",
+        "awaa209:0004"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": null,
+      "answer": "I could not find this in the provided papers.",
+      "cited": [],
+      "not_found": true,
+      "seconds_llm": 9.86,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "verdict": "correct"
+    },
+    {
+      "id": "U3",
+      "type": "unanswerable",
+      "question": "What is the plasma half-life of aducanumab?",
+      "expected": "Not in the papers (aducanumab is never mentioned).",
+      "retrieved": [
+        "ALZ-18-1484:0014",
+        "ijms-24-08164:0007",
+        "ALZ-18-1484:0016",
+        "ALZ-18-1484:0019",
+        "ALZ-18-1484:0015"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": null,
+      "answer": "I could not find this in the provided papers.",
+      "cited": [],
+      "not_found": true,
+      "seconds_llm": 12.44,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "verdict": "correct"
+    },
+    {
+      "id": "U4",
+      "type": "unanswerable",
+      "question": "What side effects did participants report after florbetapir PET scanning in the Beijing amyloid and cognition study?",
+      "expected": "Not in the papers: the study used florbetapir PET but reports no side effects (near-miss).",
+      "retrieved": [
+        "ALZ-21-e14499:0007",
+        "nihms583318:0012",
+        "bhad369:0007",
+        "bhad369:0009",
+        "bhad369:0006"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": null,
+      "answer": "I could not find this in the provided papers.",
+      "cited": [],
+      "not_found": true,
+      "seconds_llm": 11.66,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "verdict": "correct"
+    },
+    {
+      "id": "U5",
+      "type": "unanswerable",
+      "question": "How many training sessions per week did participants in the Dementia-MOVE exercise programme attend?",
+      "expected": "Not in the papers: the abstract describes a 6-month supervised programme but no session frequency (near-miss).",
+      "retrieved": [
+        "ALZ-20-e091460:0000",
+        "ALZ-20-e091460:0001",
+        "awaa209:0004",
+        "fnagi-09-00077:0008",
+        "awv191:0016"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": null,
+      "answer": "I could not find this in the provided papers.",
+      "cited": [],
+      "not_found": true,
+      "seconds_llm": 11.31,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "verdict": "correct"
+    },
+    {
+      "id": "U6",
+      "type": "unanswerable",
+      "question": "What hazard ratio for progression from MCI to dementia did the Cardiovascular Health Study analysis of CLU, CR1 and PICALM report?",
+      "expected": "Not in the papers: that analysis models cognitive trajectories and reports no hazard ratios (near-miss).",
+      "retrieved": [
+        "nihms444967:0000",
+        "nihms444967:0016",
+        "nihms444967:0010",
+        "nihms444967:0011",
+        "nihms444967:0015"
+      ],
+      "seconds_retrieval": 0.02,
+      "hit_rank": null,
+      "answer": "I could not find this in the provided papers. The sources discuss the effects of genetic variants in CLU, CR1, and PICALM on cognitive trajectories and decline, but do not report hazard ratios for progression from MCI to dementia.",
+      "cited": [],
+      "not_found": true,
+      "seconds_llm": 15.12,
+      "llm_model": "qwen3-coder-30b-a3b-instruct",
+      "verdict": "correct"
+    }
+  ]
+}

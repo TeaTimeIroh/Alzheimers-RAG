@@ -9,6 +9,9 @@ For every question in eval_questions.jsonl it runs the full pipeline (retrieve -
              refused - the model said it could not find the answer although it was retrievable
   citation   cited the right source - one of the [n] the answer cites contains the evidence
   unanswerable       - correct only if the model refuses ("I could not find this...")
+  multi              - questions whose answer needs passages from several papers
+                       (`evidence_all`): retrieved only when ALL of them are in the top k,
+                       and the answer must cite a source for each of them
 
 Results are printed per question and per question type, and saved to results/ as JSON (with
 the full answers, for manual review) so different models / settings can be compared.
@@ -35,7 +38,7 @@ from typing import Dict, List, Optional
 
 import answer                                   # loads .env, LLM client, ask()
 
-TYPES = ("finding", "lookup", "unanswerable")
+TYPES = ("finding", "lookup", "multi", "unanswerable")
 
 
 # ----------------------------------------------------------------------------- matching
@@ -64,35 +67,49 @@ def score_answer(ans: str, groups: List[List[str]]) -> int:
     return sum(1 for g in groups if any(re.search(p, a) for p in g))
 
 
+def evidence_parts(q: dict) -> list:
+    """The passages a question needs: one part (`evidence`) for most questions, several parts
+    (`evidence_all`, e.g. one per paper) for questions that combine papers. Each part is a
+    passage or a list of alternative passages."""
+    if q.get("evidence_all"):
+        return list(q["evidence_all"])
+    return [q["evidence"]] if q.get("evidence") else []
+
+
 def is_gold(chunk: dict, q: dict) -> bool:
-    """Does this retrieved chunk contain the answer, i.e. one of the passages listed under
-    `evidence`? The list is curated by hand: papers repeat a result in the abstract, results
-    and discussion in different words, so a 'miss' may be a passage that isn't listed yet -
+    """Does this retrieved chunk contain (part of) the answer, i.e. one of the listed passages?
+    The lists are curated by hand: papers repeat a result in the abstract, results and
+    discussion in different words, so a 'miss' may be a passage that isn't listed yet -
     check the retrieved chunks before believing it, and add the passage if it really answers."""
-    return contains_evidence(chunk["text"], q.get("evidence"))
+    return any(contains_evidence(chunk["text"], part) for part in evidence_parts(q))
 
 
 # ----------------------------------------------------------------------------- one question
 def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
-            retrieval_only: bool) -> dict:
+            retrieval_only: bool, retrieval: Optional[str] = None) -> dict:
     from search import search
 
     t0 = time.time()
-    rows = search(q["question"], embed_model, conn, top_k)
+    rows = search(q["question"], embed_model, conn, top_k, retrieval)
     retrieved = [{"n": i, "chunk_id": r[0], "score": round(float(r[7]), 3), "text": r[6]}
                  for i, r in enumerate(rows, start=1)]
     res = OrderedDict(id=q["id"], type=q["type"], question=q["question"], expected=q["expected"],
                       retrieved=[r["chunk_id"] for r in retrieved],
                       seconds_retrieval=round(time.time() - t0, 2))
 
-    gold = [r for r in retrieved if is_gold(r, q)]
-    res["hit_rank"] = gold[0]["n"] if gold else None           # None = answer not retrieved
-    gold_ns = {r["n"] for r in gold}
+    parts = evidence_parts(q)
+    # for each required part: the ranks of the retrieved chunks that contain it
+    part_ns = [{r["n"] for r in retrieved if contains_evidence(r["text"], part)} for part in parts]
+    found = all(part_ns) and bool(parts)
+    # rank at which the answer is complete: the last part to appear (= the only part, usually)
+    res["hit_rank"] = max(min(ns) for ns in part_ns) if found else None
+    if len(parts) > 1:
+        res["parts_found"] = "{}/{}".format(sum(bool(ns) for ns in part_ns), len(parts))
 
     if retrieval_only:
         return res
 
-    result = ask_with_retry(q["question"], conn, embed_model, top_k, llm_model)
+    result = ask_with_retry(q["question"], conn, embed_model, top_k, llm_model, retrieval)
     ans = result["answer"]
     res.update(answer=ans, cited=result["cited"], not_found=result["not_found"],
                seconds_llm=result["seconds"]["llm"], llm_model=result["llm_model"])
@@ -102,12 +119,20 @@ def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
         return res
 
     groups = q["must_include"]
+    # the answer must cite, for every required part, a source that contains it
+    res["cited_gold"] = bool(part_ns) and all(any(n in ns for n in result["cited"]) for ns in part_ns)
+    if result["not_found"]:
+        # a refusal often explains what it did find ("the sources mention MD, but..."):
+        # those keywords are not an answer, so facts are not scored
+        res["facts_matched"] = "-"
+        res["verdict"] = "refused" if found else "refused (not retrieved)"
+        return res
     matched = score_answer(ans, groups)
     res["facts_matched"] = "{}/{}".format(matched, len(groups))
-    # the answer must cite a source that actually contains the answer
-    res["cited_gold"] = any(n in gold_ns for n in result["cited"])
-    if result["not_found"]:
-        res["verdict"] = "refused" if gold else "refused (not retrieved)"
+    if matched == len(groups) and not found:
+        # right words, but the passages that support them were not in the context:
+        # guessed or misattributed, so it does not count as correct
+        res["verdict"] = "unsupported"
     elif matched == len(groups):
         res["verdict"] = "correct"
     elif matched > 0:
@@ -117,11 +142,11 @@ def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
     return res
 
 
-def ask_with_retry(question, conn, embed_model, top_k, llm_model, tries: int = 4) -> dict:
+def ask_with_retry(question, conn, embed_model, top_k, llm_model, retrieval=None, tries: int = 4) -> dict:
     """Free tiers answer 429 (rate limit) or 503 (overloaded) now and then: wait and retry."""
     for attempt in range(tries):
         try:
-            return answer.ask(question, conn, embed_model, top_k, llm_model)
+            return answer.ask(question, conn, embed_model, top_k, llm_model, retrieval)
         except answer.LLMError as e:
             transient = re.search(r"\((429|500|502|503|504)\)", str(e))
             if not transient or attempt == tries - 1:
@@ -146,7 +171,7 @@ def summarise(results: List[dict], top_k: int, retrieval_only: bool) -> Dict[str
             ranks = [1.0 / r["hit_rank"] for r in rs if r["hit_rank"]]
             s["MRR"] = round(sum(ranks) / len(rs), 3)          # mean reciprocal rank
         if not retrieval_only:
-            for v in ("correct", "partial", "wrong", "refused"):
+            for v in ("correct", "unsupported", "partial", "wrong", "refused"):
                 s[v] = sum(r["verdict"].startswith(v) for r in rs)
             if t != "unanswerable":
                 s["cited right source"] = sum(bool(r.get("cited_gold")) for r in rs)
@@ -175,6 +200,8 @@ def main() -> None:
     ap.add_argument("--top-k", type=int, default=5)
     ap.add_argument("--llm-model", default=None, help="overrides LLM_MODEL from .env")
     ap.add_argument("--retrieval-only", action="store_true", help="skip the LLM, score retrieval")
+    ap.add_argument("--retrieval", choices=("vector", "keyword", "hybrid"), default=None,
+                    help="search mode (default: RETRIEVAL from .env, else hybrid)")
     ap.add_argument("--only", default="", help="comma-separated question ids, e.g. L1,F3")
     ap.add_argument("--sleep", type=float, default=0.0, help="seconds to wait between questions")
     ap.add_argument("--out-dir", type=Path, default=Path("results"))
@@ -195,24 +222,26 @@ def main() -> None:
     import psycopg
     from pgvector.psycopg import register_vector
     from sentence_transformers import SentenceTransformer
-    from search import DSN, DEFAULT_MODEL
+    from search import DSN, DEFAULT_MODEL, default_mode
 
     try:
         llm_model = None if args.retrieval_only else (args.llm_model or answer.resolve_model())
     except answer.LLMError as e:
         sys.exit("LLM error: {}".format(e))
     embed_model = SentenceTransformer(DEFAULT_MODEL)
+    retrieval = args.retrieval or default_mode()
 
     results = []
-    print("{} questions, top-k {}, LLM: {}\n".format(
-        len(questions), args.top_k, "none (retrieval only)" if args.retrieval_only else llm_model))
+    print("{} questions, top-k {}, {} search, LLM: {}\n".format(
+        len(questions), args.top_k, retrieval,
+        "none (retrieval only)" if args.retrieval_only else llm_model))
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
         for i, q in enumerate(questions):
             if i and args.sleep:
                 time.sleep(args.sleep)
             try:
-                r = run_one(q, conn, embed_model, args.top_k, llm_model, args.retrieval_only)
+                r = run_one(q, conn, embed_model, args.top_k, llm_model, args.retrieval_only, retrieval)
             except answer.LLMError as e:
                 sys.exit("LLM error on {}: {}".format(q["id"], e))
             results.append(r)
@@ -230,10 +259,13 @@ def main() -> None:
 
     args.out_dir.mkdir(exist_ok=True)
     tag = "retrieval" if args.retrieval_only else re.sub(r"[^\w.-]+", "_", llm_model)
+    if retrieval != "vector":          # vector-search files keep the old names, for comparison
+        tag += "_" + retrieval
     out = args.out_dir / "eval_{}_k{}_{}.json".format(tag, args.top_k,
                                                       datetime.now().strftime("%Y%m%d-%H%M"))
     with open(out, "w", encoding="utf-8") as f:
-        json.dump({"llm_model": llm_model, "top_k": args.top_k, "summary": summary,
+        json.dump({"llm_model": llm_model, "retrieval": retrieval, "top_k": args.top_k,
+                   "summary": summary,
                    "results": results}, f, ensure_ascii=False, indent=2)
     print("\nfull answers saved to {}  (review the partial/wrong ones by hand)".format(out))
 

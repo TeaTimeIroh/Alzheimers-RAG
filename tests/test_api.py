@@ -36,7 +36,8 @@ def client(monkeypatch):
             raise psycopg.OperationalError("connection refused\ndetails")
         return FakeConn()
 
-    def fake_ask(question, conn, embed_model, top_k, llm_model=None):
+    def fake_ask(question, conn, embed_model, top_k, llm_model=None, retrieval=None):
+        state["retrieval"] = retrieval
         if question == "llm down please":
             raise answer.LLMError("Cannot reach http://localhost:1234/v1")
         sources = [{"n": i, "chunk_id": r[0], "title": r[1], "year": r[2], "section": r[3],
@@ -44,6 +45,7 @@ def client(monkeypatch):
                    for i, r in enumerate(ROWS[:top_k], start=1)]
         return {"question": question, "answer": "29 regions [1].", "not_found": False,
                 "cited": [1], "sources": sources, "llm_model": "fake",
+                "retrieval": retrieval or "vector",
                 "seconds": {"retrieval": 0.01, "llm": 0.5}, "messages": []}
 
     # never load the real embedding model in tests, even where it is installed
@@ -52,7 +54,11 @@ def client(monkeypatch):
     monkeypatch.setitem(sys.modules, "sentence_transformers", stub)
     monkeypatch.setattr(api.psycopg, "connect", fake_connect)
     monkeypatch.setattr(api, "register_vector", lambda conn: None)
-    monkeypatch.setattr(api, "search", lambda q, model, conn, k: ROWS[:k])
+    def fake_search(q, model, conn, k, mode=None):
+        state["search_mode"] = mode
+        return ROWS[:k]
+
+    monkeypatch.setattr(api, "search", fake_search)
     monkeypatch.setattr(answer, "ask", fake_ask)
     with TestClient(api.app) as c:
         c.state = state
@@ -97,3 +103,21 @@ def test_database_failure_is_503(client):
 
 def test_openapi_docs_available(client):
     assert client.get("/openapi.json").status_code == 200
+
+
+def test_search_mode_is_passed_through(client):
+    assert client.get("/search", params={"q": "regions", "mode": "hybrid"}).status_code == 200
+    assert client.state["search_mode"] == "hybrid"
+    client.get("/search", params={"q": "regions"})
+    assert client.state["search_mode"] is None          # None = the server's RETRIEVAL setting
+
+
+def test_ask_retrieval_is_passed_through_and_reported(client):
+    r = client.post("/ask", json={"question": "How many regions?", "retrieval": "keyword"})
+    assert r.status_code == 200 and r.json()["retrieval"] == "keyword"
+    assert client.state["retrieval"] == "keyword"
+
+
+def test_unknown_mode_is_rejected(client):
+    assert client.get("/search", params={"q": "regions", "mode": "bm25"}).status_code == 422
+    assert client.post("/ask", json={"question": "How many?", "retrieval": "bm25"}).status_code == 422

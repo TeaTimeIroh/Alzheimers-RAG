@@ -8,8 +8,9 @@ numbered citations pointing to the exact passage, section and page it came from.
 papers don't contain the answer, it says so instead of guessing.
 
 Built end to end in Python: PDF parsing → chunking → embeddings in **PostgreSQL + pgvector** →
-retrieval → LLM answer with citations → **FastAPI** REST API → an evaluation suite with known
-answers, used to compare a local LLM with a cloud LLM.
+**hybrid retrieval** (vector + full-text search, fused) → LLM answer with citations →
+**FastAPI** REST API → an evaluation suite with known answers, used to compare retrieval
+methods and a local LLM with a cloud LLM.
 
 ![Example answer with citations](docs/images/answer_gemini.png)
 
@@ -21,7 +22,7 @@ flowchart LR
     B --> C[chunk_docs.py<br/>~220-word chunks]
     C --> D[embed_store.py<br/>BGE-small embeddings]
     D --> E[(PostgreSQL<br/>+ pgvector)]
-    Q[Question] --> S[search.py<br/>cosine top-k]
+    Q[Question] --> S[search.py<br/>vector + full-text<br/>fused with RRF]
     E --> S
     S --> G[answer.py<br/>prompt with numbered sources]
     G --> L[LLM<br/>LM Studio or Gemini]
@@ -34,8 +35,8 @@ flowchart LR
 |---|---|---|
 | Parse | [`parse_pdfs.py`](parse_pdfs.py) | PyMuPDF text extraction with reading-order fixes for two-column pages and sidebars, header/footer and reference-list removal, heading detection, de-hyphenation; attaches title/authors/year/DOI from the PubMed CSV |
 | Chunk | [`chunk_docs.py`](chunk_docs.py) | Section-aware chunks (~220 words, hard cap 320, 40-word overlap); drops front matter, affiliations and boilerplate sections (funding, conflicts of interest, ...) |
-| Embed & store | [`embed_store.py`](embed_store.py) | Embeds with `BAAI/bge-small-en-v1.5` (local, 384 dims) and upserts into Postgres/pgvector with an HNSW index; keeps the table identical to `chunks.jsonl` |
-| Retrieve | [`search.py`](search.py) | Cosine-similarity top-k search; also a CLI to inspect retrieval on its own |
+| Embed & store | [`embed_store.py`](embed_store.py) | Embeds with `BAAI/bge-small-en-v1.5` (local, 384 dims) and upserts into Postgres/pgvector with an HNSW index; adds a full-text column (`tsvector`, GIN index); keeps the table identical to `chunks.jsonl` |
+| Retrieve | [`search.py`](search.py) | Three modes: `vector` (cosine similarity), `keyword` (Postgres full-text) and `hybrid` (default: both, merged with Reciprocal Rank Fusion); also a CLI to inspect retrieval on its own |
 | Answer | [`answer.py`](answer.py) | Numbers the retrieved passages, instructs the LLM to answer only from them and cite `[n]`, or reply that the papers don't contain the answer |
 | Serve | [`api.py`](api.py) | FastAPI: `POST /ask`, `GET /search`, `GET /health`, Swagger UI at `/docs` |
 | Evaluate | [`evaluate.py`](evaluate.py) | Runs the test questions; scores retrieval (hit@k, MRR), answers, citations and refusals per question type |
@@ -45,46 +46,114 @@ code runs against a local model in LM Studio or Google's Gemini API.
 
 ## Numbers
 
-Measured with [`evaluate.py`](evaluate.py) on 15 questions with known answers
-([`eval_questions.jsonl`](eval_questions.jsonl)): 6 about a paper's findings, 6 asking for a
-specific number, and 3 that **cannot** be answered from the papers.
+Measured with [`evaluate.py`](evaluate.py) on 30 questions with known answers
+([`eval_questions.jsonl`](eval_questions.jsonl)):
+
+- 11 about a paper's **findings**, 4 of them deliberately paraphrased so they don't share the
+  paper's wording;
+- 11 **lookups** of a specific number or name, most of them from the body text rather than
+  the abstract;
+- 2 that need **two papers** (the same tracer / the same measure in both studies);
+- 6 that **cannot** be answered from the papers - 3 of them near misses about a study that
+  *is* in the collection but doesn't report the detail asked for.
+
+### Answers (hybrid search, top 5 passages)
 
 | | Gemini 3.1 Flash-Lite (API) | Qwen3-Coder 30B-A3B (local, LM Studio, Q4_K_M) |
 |---|---|---|
-| Answerable questions answered correctly | **12 / 12** | 11 / 12 |
-| Answer cites a passage containing the answer | 12 / 12 | 12 / 12 |
-| Unanswerable questions correctly refused | 3 / 3 | 3 / 3 |
-| Average time per answer | ~3 s | ~19 s |
+| Answerable questions answered correctly | **22 / 24** | **22 / 24** |
+| The two-paper questions | 0 / 2 (refused) | 0 / 2 (answered without support) |
+| Answer cites a passage containing the answer | 22 / 24 | 19 / 24 \* |
+| Unanswerable questions correctly refused | 6 / 6 | 6 / 6 |
+| Time per answer | ~1 s (plus free-tier rate-limit waits) | ~21 s |
 
-Retrieval alone (same for both models, top 5 passages):
+\* A lower bound: checking by hand, two of Qwen's "wrong" citations point to Results
+passages that do contain the answer but aren't in the question's hand-made evidence list.
 
-| | hit@5 | hit@1 | MRR |
+### Retrieval: vector vs keyword vs hybrid
+
+| | Vector (cosine) | Keyword (full-text) | **Hybrid (RRF)** |
 |---|---|---|---|
-| Finding questions (6) | 6 / 6 | 1 / 6 | 0.50 |
-| Number-lookup questions (6) | 6 / 6 | 3 / 6 | 0.69 |
-| **All answerable (12)** | **12 / 12** | **4 / 12** | **0.60** |
+| Answer passage in the top 5 | 21 / 24 | 22 / 24 | **22 / 24** |
+| Answer passage ranked first | 10 / 24 | 13 / 24 | **14 / 24** |
+| MRR (top 5) | 0.604 | 0.691 | **0.717** |
+| Answer passage in the top 3 | 21 / 24 | 21 / 24 | 21 / 24 |
+| Correct answers, Gemini / Qwen (top 5) | 21 / 20 | - | **22 / 22** |
+| Correct answers, Gemini / Qwen (top 3) | 21 / 21 | - | 21 / 21 |
 
-*hit@k: the passage containing the answer is among the top k retrieved; MRR: mean reciprocal
-rank of that passage (1.0 = always ranked first).* Raw results with every answer are in
-[`results/`](results).
+*MRR: mean reciprocal rank of the answer passage (1.0 = always ranked first). Raw results with
+every retrieved passage and answer are in [`results/`](results); files without a mode in
+their name are vector search.*
 
 What the numbers say:
 
-- **Retrieval always finds the answer, but rarely ranks it first** (usually 2nd–3rd). Passing
-  5 passages to the LLM hides this today; with fewer passages, answers would start to go
-  missing. This is the main thing to improve next.
-- **Number lookups ranked better than findings** (MRR 0.69 vs 0.50) - the opposite of the
-  initial expectation. Lookup questions name the study and use specific terms, so they match
-  one passage clearly; findings are general claims that compete with similar wording across
-  abstracts and discussions.
-- **Qwen's one error is a misattribution, not a retrieval failure.** Asked how much
-  hippocampal neuron loss 10-month-old APP/PS1KI mice show, it cited the correct passage but
-  answered "−14%" - a figure the same review gives for a *different* mouse model (the answer
-  is >50%). It repeats the same error on every run (temperature 0).
-- **Both models refused all three unanswerable questions**, including a near-miss about a
-  trial that *is* in the papers but whose dropout numbers are not reported.
+- **Hybrid search mainly improves ranking.** Compared with vector search it moved the answer
+  passage up for 9 questions, down for 1 (F8: 1st → 2nd) and left 14 unchanged; "ranked
+  first" went from 10 to 14 of 24. With 24 questions, differences of one or two are noise -
+  the ranking gain is the clear result.
+- **Full-text search alone already beat vector search here.** Part of that is how the set was
+  made (questions written while reading the papers tend to reuse their terms), but the
+  paraphrased questions show no disadvantage for keyword search. The two methods often
+  disagree on which passage is best, which is exactly what fusion exploits.
+- **Fusion can also hurt**: for L11 ("60.9 months") full-text search ranks the passage 1st,
+  vector search not even in its top 20, so RRF - which rewards passages both methods
+  agree on - puts it 5th, and at top 3 it is lost again.
+- **Two-paper questions fail in every mode.** All five slots go to the paper that matches the
+  question best and the second paper never makes the cut - a retrieval-design problem
+  (diversity / splitting the question), not a ranking one. Gemini then refuses. Qwen doesn't
+  use the refusal sentence: for M1 it names the tracer for one study and says the other is
+  unknown; for M2 it attributes a finding to the second study using a passage from the first,
+  citing the paper's internal reference numbers (`[62]`) instead of the sources.
+- **Refusals only happen when the answer wasn't retrieved.** Neither model refused a question
+  whose answer passage was in its context, and both refused all 6 unanswerable questions.
+- **Keyword scoring has blind spots.** Qwen's L6 answer now passes ("CA1 neuron loss of over
+  50%"), but "CA1" belongs to a *different* mouse model in the same passage (−14%): the right
+  number with a wrong detail attached. Catching that needs a reader or an LLM judge.
 
-![Evaluation run with Gemini](docs/images/eval_gemini-flash-lite.png)
+<details>
+<summary>Per-question rank of the answer passage (top 5; – = not retrieved)</summary>
+
+| Question | Tags | Vector | Keyword | Hybrid |
+|---|---|---|---|---|
+| F1 | exact-term | 1 | 1 | 1 |
+| F2 | abstract | 3 | 2 | 2 |
+| F3 | abstract, exact-term | 3 | 4 | 2 |
+| F4 | abstract | 2 | 1 | 1 |
+| F5 | abstract | 2 | 3 | 1 |
+| F6 | abstract, exact-term | 3 | 1 | 2 |
+| F7 | paraphrase, abstract | 2 | 1 | 1 |
+| F8 | body | 1 | 3 | 2 |
+| F9 | paraphrase | 2 | 1 | 1 |
+| F10 | paraphrase, body | 1 | 1 | 1 |
+| F11 | paraphrase, body | 1 | 2 | 1 |
+| L1 | body | 3 | 2 | 3 |
+| L2 | abstract | 1 | 1 | 1 |
+| L3 | abstract | 1 | 1 | 1 |
+| L4 | abstract | 1 | 2 | 1 |
+| L5 | body | 2 | 1 | 1 |
+| L6 | body | 3 | 3 | 3 |
+| L7 | exact-term, body | 1 | 1 | 1 |
+| L8 | exact-term, body | 1 | 1 | 1 |
+| L9 | body | 3 | 3 | 3 |
+| L10 | exact-term, body | 1 | 1 | 1 |
+| L11 | body | – | 1 | 5 |
+| M1 | two papers | – | – | – |
+| M2 | two papers | – | – | – |
+
+</details>
+
+**How the comparison was kept fair.** The 30 questions and their evidence passages were
+fixed and the vector-search baseline was run *before* hybrid search was written. Two scoring
+fixes came from reviewing the baseline (missing alternative wordings for F11 and M2, and the
+new "unsupported" verdict below); all baseline runs were repeated with them. The full-text
+settings (OR vs AND, `ts_rank` vs `ts_rank_cd`, title weighting) were compared on this same
+set, which flatters the keyword numbers slightly; the choices that mattered were obvious
+ones - AND-matching found the answer for only 2 of 24 questions.
+
+An earlier 15-question version of the set (Gemini 12/12, Qwen 11/12, both refusing 3/3)
+is kept in `results/` with the 2026-11-01 date.
+
+![Evaluation run with Gemini (15-question version)](docs/images/eval_gemini-flash-lite.png)
 
 ## Design decisions
 
@@ -101,8 +170,16 @@ What the numbers say:
   reply with a fixed "could not find" sentence, which makes refusals measurable.
 - **Temperature 0** for answers, so evaluation runs are repeatable.
 - **Postgres + pgvector in Docker** rather than a dedicated vector database: one familiar
-  database for text, metadata and vectors, started with one command.
-- **Keyword scoring with manual review** instead of an LLM judge: with 15 questions, reading
+  database for text, metadata and vectors, started with one command - and it already has
+  full-text search, so hybrid retrieval needed no new service. The `tsvector` is a generated
+  column, so Postgres keeps it in sync with the text by itself.
+- **Reciprocal Rank Fusion** to combine the two searches: each passage scores
+  1/(60 + rank) in every list it appears in (top 20 of each). It uses only ranks, so cosine
+  similarities and `ts_rank` values - on unrelated scales - never have to be normalised.
+- **Full-text query with OR, not AND.** Postgres' `plainto_tsquery` requires every word of a
+  question to appear in a passage, which almost never happens for a whole question; joining
+  the words with OR and letting `ts_rank` reward passages with more (and rarer) matches works.
+- **Keyword scoring with manual review** instead of an LLM judge: with 30 questions, reading
   the flagged answers is faster and more reliable than validating a judge.
 
 ## Lessons learned
@@ -136,6 +213,12 @@ Things that only showed up by measuring, and what was done about them:
   as retrieval misses because each fact appears several times in a paper in different words.
   The evidence for each question is now a hand-checked list of passages; a looser automatic
   rule was tried and rejected because it inflated the scores.
+- **The right words aren't a correct answer.** Asked what *two* studies both report, Qwen
+  answered "mean diffusivity" - correct - while only one of the papers had been retrieved,
+  and labelled a passage of the first paper as the second study. Keyword scoring counted it
+  as correct. Answers whose supporting passages were never retrieved are now scored
+  **unsupported**, and refusals are no longer scored for facts (a refusal that explains what
+  it *did* find used to show "1/1 facts").
 
 ## Build and run
 
@@ -162,10 +245,12 @@ python answer.py --list-models
 
 :: 5. ask
 python search.py "sex differences in genetic risk for Alzheimer's pathology"
+python search.py "interval between diagnosis and autopsy" --retrieval keyword
 python answer.py "Which variants' effects depend on APOE e4?"
 
-:: 6. evaluate
+:: 6. evaluate (hybrid search unless --retrieval vector|keyword or RETRIEVAL in .env)
 python evaluate.py --retrieval-only
+python evaluate.py --retrieval-only --retrieval vector
 python evaluate.py
 
 :: 7. run the API, then open http://127.0.0.1:8000/docs
@@ -183,13 +268,17 @@ ruff check .
 pytest
 ```
 
-90 tests cover the parser (including a PDF generated on the fly with a running header,
+132 tests cover the parser (including a PDF generated on the fly with a running header,
 page numbers and a reference list), the chunker (size cap with overlap, front-matter and
-boilerplate filtering, paragraphs split across pages), citation parsing, the LLM client, the
-evaluator's scoring, the API endpoints and error codes, and the format of
-`eval_questions.jsonl`. They need no database, LLM, embedding model or PDFs - those are faked -
-so [GitHub Actions](.github/workflows/ci.yml) runs them with ruff on Python 3.11, 3.13 and 3.14
-for every push and pull request. Several tests pin down bugs found during development (e.g.
+boilerplate filtering, paragraphs split across pages), Reciprocal Rank Fusion and the search
+modes, citation parsing, the LLM client, the evaluator's scoring, the API endpoints and error
+codes, and the format of `eval_questions.jsonl`. Most need no database, LLM, embedding model or
+PDFs - those are faked. The full-text and hybrid SQL is tested against a real Postgres +
+pgvector, in a throwaway schema; those tests run when `TEST_DATABASE_URL` is set
+(`set TEST_DATABASE_URL=postgresql://rag:rag@localhost:5433/rag` with the Docker database up)
+and are skipped otherwise. [GitHub Actions](.github/workflows/ci.yml) starts a pgvector
+database and runs everything with ruff on Python 3.11, 3.13 and 3.14 for every push and pull
+request. Several tests pin down bugs found during development (e.g.
 two-column pages read out of order, heading-less papers losing their main text).
 
 PyMuPDF is pinned to the version that produced the published results; with it, the pipeline
@@ -234,8 +323,12 @@ Response (shortened):
 }
 ```
 
-`GET /search?q=...&k=5` returns the retrieved passages without calling the LLM;
-`GET /health` reports the database status and configured models.
+`GET /search?q=...&k=5&mode=hybrid` returns the retrieved passages without calling the LLM;
+`GET /health` reports the database status and configured models. Both `/search` (`mode`) and
+`/ask` (`"retrieval"`) accept `vector`, `keyword` or `hybrid`, defaulting to the server's
+`RETRIEVAL` setting (hybrid). Responses now also report the `retrieval` mode used; the score
+is a cosine similarity, a `ts_rank` or an RRF score depending on the mode - only the order
+matters. (The response above is from a vector-search run.)
 
 <details>
 <summary>More screenshots</summary>
@@ -297,11 +390,13 @@ not medical advice.
 
 Limitations:
 
-- **Small test set.** 15 questions, drafted after seeing how the system behaves and checked
-  against the papers' text rather than by a domain expert; both models already score near the
-  maximum, so the set can't show further gains in answer accuracy. Answer scoring is
-  keyword-based and was reviewed by hand.
-- **Ranking**: the answer passage is ranked first for only 4 of 12 questions.
+- **Small test set.** 30 questions, written from the papers' text and checked against it
+  rather than by a domain expert; differences of one or two questions are within noise, and
+  the full-text settings were chosen on the same set. Answer scoring is keyword-based and was
+  reviewed by hand.
+- **Questions spanning two papers fail**: retrieval fills all slots from one paper.
+- **Ranking**: even with hybrid search the answer passage is ranked first for 14 of 24
+  questions.
 - **Tables and formulas** are flattened to text; some symbols are lost (`�`).
 - **Single-turn**: no conversation memory; each question is independent.
 - The Gemini free tier has unpublished, changeable rate limits, and Google may use free-tier
@@ -309,12 +404,12 @@ Limitations:
 
 Roadmap:
 
-1. **Hybrid search**: add Postgres full-text search next to the vector search and merge the
-   rankings; measure the change in hit@1 / MRR and with `--top-k 3`.
-2. **Harder test set**: questions combining two papers, more body-text lookups, more near-miss
-   unanswerable questions; ideally some written by someone who knows the field.
-3. **Reranker**: a cross-encoder over the top 20 to improve ranking.
-4. **LLM judge** to complement keyword scoring as the test set grows.
+1. **Multi-paper retrieval**: cap the passages per paper so a second paper gets a slot, or
+   split a question into one search per study; M1/M2 measure it.
+2. **Reranker**: a cross-encoder over the fused top 20 to improve ranking further.
+3. **LLM judge / faithfulness check** next to keyword scoring, to catch answers like Qwen's
+   L6 that have the right number with a wrong detail attached.
+4. **Questions from someone who knows the field**, including more near-miss unanswerable ones.
 
 ## Repository layout
 
@@ -326,7 +421,7 @@ Roadmap:
 ├── answer.py              retrieval + LLM answer with citations (+ CLI)
 ├── api.py                 FastAPI app
 ├── evaluate.py            evaluation runner
-├── eval_questions.jsonl   15 test questions with expected answers and evidence passages
+├── eval_questions.jsonl   30 test questions with expected answers and evidence passages
 ├── tests/                 pytest suite (no database / LLM / model needed)
 ├── .github/workflows/     CI: ruff + pytest on Python 3.11, 3.13, 3.14
 ├── results/               evaluation outputs (all answers, per-question scores)
@@ -352,7 +447,7 @@ for the paper metadata. The research itself belongs to the authors of the 19 pap
 above.
 
 This project was built with Claude (Anthropic) as a coding assistant. Claude wrote most of
-the Python code and the first draft of this README, and drafted the 15 evaluation questions
+the Python code and the first draft of this README, and drafted the 30 evaluation questions
 from the papers, checking each expected answer against the extracted text;
 I then reviewed the questions, answers and evidence passages.
 I defined the project and its scope, chose the papers, set up and ran the whole stack on my own machine
