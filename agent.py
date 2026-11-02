@@ -53,6 +53,8 @@ How to work:
 - If a search does not return what you need, search again with other words.
 - Stop searching as soon as you have passages for every part of the question, then write the
   final answer as a normal message (no tool call).
+- If after searching the passages do not contain the answer, your final message must start
+  with exactly this sentence: "{not_found}" You may add one sentence on what the papers do say.
 
 Rules:
 {rules}"""
@@ -164,7 +166,8 @@ def ask_agent(question: str, conn, embed_model, llm_model: Optional[str] = None,
     papers = list_papers(conn)
     paper_ids = {p["id"] for p in papers}
     system = AGENT_PROMPT.format(
-        papers="\n".join("{id} | {title} | {year}".format(**p) for p in papers), rules=RULES)
+        papers="\n".join("{id} | {title} | {year}".format(**p) for p in papers), rules=RULES,
+        not_found=NOT_FOUND)
     messages: List[dict] = [{"role": "system", "content": system},
                             {"role": "user", "content": question}]
     passages = Passages()

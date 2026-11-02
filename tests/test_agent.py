@@ -123,3 +123,10 @@ def test_retry_on_rate_limit(monkeypatch):
     monkeypatch.setattr(agent, "chat_message", flaky)
     monkeypatch.setattr(agent.time, "sleep", lambda s: None)
     assert agent.chat_with_retry([], "m", None) == {"content": "ok"} and calls["n"] == 2
+
+
+def test_prompt_states_the_exact_refusal_sentence(world):
+    world["script"] = [{"content": answer.NOT_FOUND}]
+    agent.ask_agent("q", None, None, llm_model="m")
+    system = world["seen"][0]["messages"][0]["content"]
+    assert 'with exactly this sentence: "{}"'.format(answer.NOT_FOUND) in system
