@@ -62,7 +62,7 @@ Measured with [`evaluate.py`](evaluate.py) on 30 questions with known answers
 | | Gemini 3.1 Flash-Lite (API) | Qwen3-Coder 30B-A3B (local, LM Studio, Q4_K_M) |
 |---|---|---|
 | Answerable questions answered correctly | **22 / 24** | **22 / 24** |
-| - the two-paper questions | 0 / 2 (refused) | 0 / 2 (answered without support) |
+| The two-paper questions | 0 / 2 (refused) | 0 / 2 (answered without support) |
 | Answer cites a passage containing the answer | 22 / 24 | 19 / 24 \* |
 | Unanswerable questions correctly refused | 6 / 6 | 6 / 6 |
 | Time per answer | ~1 s (plus free-tier rate-limit waits) | ~21 s |
