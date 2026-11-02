@@ -39,34 +39,38 @@ COLUMNS = "chunk_id, title, year, section, page_start, page_end, text"
 TSQUERY = "replace(plainto_tsquery('english', %(q)s)::text, '&', '|')::tsquery"
 
 
-def vector_search(query: str, model, conn, k: int) -> List[tuple]:
+def vector_search(query: str, model, conn, k: int, doc_id: Optional[str] = None) -> List[tuple]:
+    """doc_id: search only that paper's passages (used by the agent's search_paper tool)."""
     q = model.encode(QUERY_PREFIX + query, normalize_embeddings=True)
+    where = "WHERE doc_id = %(doc)s " if doc_id else ""
     return conn.execute(
         """SELECT {cols}, 1 - (embedding <=> %(v)s) AS score
-           FROM chunks ORDER BY embedding <=> %(v)s LIMIT %(k)s""".format(cols=COLUMNS),
-        {"v": q, "k": k},
+           FROM chunks {where}ORDER BY embedding <=> %(v)s LIMIT %(k)s""".format(
+            cols=COLUMNS, where=where),
+        {"v": q, "k": k, "doc": doc_id},
     ).fetchall()
 
 
-def keyword_search(query: str, conn, k: int) -> List[tuple]:
+def keyword_search(query: str, conn, k: int, doc_id: Optional[str] = None) -> List[tuple]:
     # normalization 1: divide the rank by 1 + log(passage length), so long passages don't win
     # just by containing more words
     import psycopg
     try:
-        return _keyword_rows(query, conn, k)
+        return _keyword_rows(query, conn, k, doc_id)
     except psycopg.errors.UndefinedColumn as e:
         raise RuntimeError("The chunks table has no full-text column yet (added for keyword/hybrid "
                            "search). Run:  python embed_store.py --chunks chunks.jsonl\n"
                            "or use --retrieval vector.") from e
 
 
-def _keyword_rows(query: str, conn, k: int) -> List[tuple]:
+def _keyword_rows(query: str, conn, k: int, doc_id: Optional[str] = None) -> List[tuple]:
+    where = "AND doc_id = %(doc)s " if doc_id else ""
     return conn.execute(
         """WITH q AS (SELECT {tsq} AS query)
            SELECT {cols}, ts_rank(tsv, q.query, 1) AS score
-           FROM chunks, q WHERE tsv @@ q.query
-           ORDER BY score DESC, chunk_id LIMIT %(k)s""".format(cols=COLUMNS, tsq=TSQUERY),
-        {"q": query, "k": k},
+           FROM chunks, q WHERE tsv @@ q.query {where}
+           ORDER BY score DESC, chunk_id LIMIT %(k)s""".format(cols=COLUMNS, tsq=TSQUERY, where=where),
+        {"q": query, "k": k, "doc": doc_id},
     ).fetchall()
 
 
@@ -81,9 +85,11 @@ def rrf(rankings: Sequence[Sequence[str]], k: int = RRF_K) -> List[Tuple[str, fl
     return sorted(scores.items(), key=lambda item: -item[1])   # sorted() is stable
 
 
-def hybrid_search(query: str, model, conn, k: Optional[int]) -> List[tuple]:
-    vec = vector_search(query, model, conn, CANDIDATES)
-    kw = keyword_search(query, conn, CANDIDATES)
+def hybrid_search(query: str, model, conn, k: Optional[int],
+                  doc_id: Optional[str] = None) -> List[tuple]:
+    extra = {"doc_id": doc_id} if doc_id else {}
+    vec = vector_search(query, model, conn, CANDIDATES, **extra)
+    kw = keyword_search(query, conn, CANDIDATES, **extra)
     rows = {r[0]: r[:-1] for r in vec + kw}                 # chunk_id -> row without its score
     fused = rrf([[r[0] for r in vec], [r[0] for r in kw]])[:k]
     return [rows[cid] + (score,) for cid, score in fused]
@@ -113,21 +119,23 @@ def cap_per_paper(rows: Sequence[tuple], max_per_paper: int) -> List[tuple]:
 
 
 def search(query: str, model, conn, top_k: int = 5, mode: Optional[str] = None,
-           max_per_paper: Optional[int] = None) -> List[tuple]:
+           max_per_paper: Optional[int] = None, doc_id: Optional[str] = None) -> List[tuple]:
     """Rows of (chunk_id, title, year, section, page_start, page_end, text, score), best first.
     The score depends on the mode (cosine similarity, ts_rank or RRF): only the order matters.
-    max_per_paper: optional cap on passages from one paper (off by default)."""
+    max_per_paper: optional cap on passages from one paper (off by default).
+    doc_id: search inside one paper only (the agent's search_paper tool)."""
     mode = mode or default_mode()
     if mode not in MODES:
         raise ValueError("retrieval mode must be one of {}, not {!r}".format(MODES, mode))
     # with a cap, rank a larger pool first so there is something left to fill the freed slots
     pool = top_k if not max_per_paper else max(CANDIDATES, top_k)
+    extra = {"doc_id": doc_id} if doc_id else {}
     if mode == "vector":
-        rows = vector_search(query, model, conn, pool)
+        rows = vector_search(query, model, conn, pool, **extra)
     elif mode == "keyword":
-        rows = keyword_search(query, conn, pool)
+        rows = keyword_search(query, conn, pool, **extra)
     else:
-        rows = hybrid_search(query, model, conn, pool if not max_per_paper else None)
+        rows = hybrid_search(query, model, conn, pool if not max_per_paper else None, **extra)
     if max_per_paper:
         rows = cap_per_paper(rows, max_per_paper)
     return rows[:top_k]

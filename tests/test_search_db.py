@@ -108,3 +108,9 @@ def test_missing_fulltext_column_gives_a_clear_error():
                 search.keyword_search("autopsy interval", c, 5)
         finally:
             c.execute("DROP SCHEMA rag_test_old CASCADE")
+
+
+def test_search_inside_one_paper(conn):
+    rows = search.keyword_search("participants amyloid PET months", conn, 5, doc_id="b")
+    assert rows and {r[0].split(":")[0] for r in rows} == {"b"}
+    assert search.keyword_search("autopsy", conn, 5, doc_id="b") == []    # only paper a says that

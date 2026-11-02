@@ -97,10 +97,14 @@ def resolve_model() -> str:
     return models[0]
 
 
-def chat(messages: List[Dict[str, str]], model: str, temperature: float = 0.0,
-         max_tokens: int = 700) -> str:
+def chat_message(messages: List[dict], model: str, temperature: float = 0.0,
+                 max_tokens: int = 700, tools: Optional[List[dict]] = None) -> dict:
+    """One chat-completions call; returns the assistant message as the API sent it (it may
+    contain "tool_calls" when `tools` are offered). Raises LLMError on any failure."""
     payload = {"model": model, "messages": messages,
                "temperature": temperature, "max_tokens": max_tokens}
+    if tools:
+        payload["tools"] = tools
     try:
         r = requests.post(LLM_BASE_URL + "/chat/completions", headers=_headers(),
                           json=payload, timeout=LLM_TIMEOUT)
@@ -112,9 +116,20 @@ def chat(messages: List[Dict[str, str]], model: str, temperature: float = 0.0,
                        .format(LLM_TIMEOUT))
     if r.status_code != 200:
         raise LLMError("LLM request failed ({}): {}".format(r.status_code, r.text[:500]))
-    content = r.json()["choices"][0]["message"].get("content") or ""
+    try:
+        return r.json()["choices"][0]["message"]
+    except (ValueError, KeyError, IndexError):
+        raise LLMError("Unexpected response from the LLM server: {}".format(r.text[:300]))
+
+
+def strip_thinking(content: Optional[str]) -> str:
     # Reasoning models (e.g. Qwen3 thinking variants) may include their thinking; drop it.
-    return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+    return re.sub(r"<think>.*?</think>", "", content or "", flags=re.DOTALL).strip()
+
+
+def chat(messages: List[Dict[str, str]], model: str, temperature: float = 0.0,
+         max_tokens: int = 700) -> str:
+    return strip_thinking(chat_message(messages, model, temperature, max_tokens).get("content"))
 
 
 # ----------------------------------------------------------------------------- RAG

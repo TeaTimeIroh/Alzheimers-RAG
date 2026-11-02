@@ -185,3 +185,18 @@ def test_rescore_applies_new_evidence_without_new_llm_calls(tmp_path, monkeypatc
     assert out.name == "eval_fake_k2_rescored.json"
     assert r["hit_rank"] == 2 and r["verdict"] == "correct" and r["cited_gold"] is True
     assert r["answer"] == "29 regions [2]."                   # the saved answer is kept as it was
+
+
+# ----------------------------------------------------------------------------- agent mode
+def test_agent_results_are_scored_on_every_passage_it_saw(monkeypatch):
+    import agent
+    hits = [{"n": i, "chunk_id": r[0], "text": r[6]} for i, r in enumerate(MULTI_ROWS, start=1)]
+    monkeypatch.setattr(agent, "ask_agent", lambda *a, **k: {
+        "answer": "Both used florbetapir [1][3].", "cited": [1, 3], "not_found": False,
+        "hits": hits, "llm_model": "fake", "steps": 2, "llm_calls": 3, "trace": [],
+        "seconds": {"retrieval": 0.1, "llm": 1.0}})
+    res = evaluate.run_one(MULTI, None, None, 5, "fake", False, mode="agent")
+    assert res["verdict"] == "correct" and res["cited_gold"] is True and res["parts_found"] == "2/2"
+    assert res["steps"] == 2 and res["retrieved"] == ["a:0006", "x:0001", "b:0007"]
+    s = evaluate.summarise([res], 5, False, agent=True)["multi"]
+    assert s["evidence found"] == 1 and "MRR" not in s and s["avg tool steps"] == 2
