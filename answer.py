@@ -15,6 +15,7 @@ variables or from a .env file next to this script (see .env.example):
 
 Run:  python answer.py "Which variants' effects depend on APOE e4?"
       python answer.py "..." --top-k 8 --show-prompt
+      python answer.py "..." --retrieval hybrid      (vector | keyword | hybrid, see search.py)
       python answer.py --list-models
       python answer.py "..." --json          (machine-readable, for the evaluation script)
 
@@ -140,12 +141,15 @@ def cited_numbers(answer: str, n_sources: int) -> List[int]:
     return sorted(n for n in nums if 1 <= n <= n_sources)
 
 
-def ask(question: str, conn, embed_model, top_k: int = 5, llm_model: Optional[str] = None) -> dict:
-    """Retrieve, prompt, answer. Returns everything the CLI, the API and the evaluation need."""
-    from search import search            # same retrieval code as search.py
+def ask(question: str, conn, embed_model, top_k: int = 5, llm_model: Optional[str] = None,
+        retrieval: Optional[str] = None) -> dict:
+    """Retrieve, prompt, answer. Returns everything the CLI, the API and the evaluation need.
+    retrieval: vector | keyword | hybrid (default: RETRIEVAL from .env, else vector)."""
+    from search import default_mode, search      # same retrieval code as search.py
 
+    retrieval = retrieval or default_mode()
     t0 = time.time()
-    rows = search(question, embed_model, conn, top_k)
+    rows = search(question, embed_model, conn, top_k, retrieval)
     t_retrieval = time.time() - t0
     hits = []
     for n, (cid, title, year, section, p0, p1, text, score) in enumerate(rows, start=1):
@@ -166,6 +170,7 @@ def ask(question: str, conn, embed_model, top_k: int = 5, llm_model: Optional[st
         "cited": cited,
         "sources": [{k: v for k, v in h.items() if k != "text"} for h in hits],
         "llm_model": model,
+        "retrieval": retrieval,
         "seconds": {"retrieval": round(t_retrieval, 2), "llm": round(t_llm, 2)},
         "messages": messages,
     }
@@ -176,6 +181,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Answer a question from the papers, with sources.")
     ap.add_argument("question", nargs="?")
     ap.add_argument("--top-k", type=int, default=5)
+    ap.add_argument("--retrieval", choices=("vector", "keyword", "hybrid"), default=None,
+                    help="overrides RETRIEVAL from .env (default: vector)")
     ap.add_argument("--embed-model", default=None, help="must match embed_store.py (default: BGE small)")
     ap.add_argument("--llm-model", default=None, help="overrides LLM_MODEL")
     ap.add_argument("--show-prompt", action="store_true", help="print exactly what the LLM received")
@@ -203,7 +210,7 @@ def main() -> None:
         embed_model = SentenceTransformer(args.embed_model or DEFAULT_MODEL)
         with psycopg.connect(DSN) as conn:
             register_vector(conn)
-            result = ask(args.question, conn, embed_model, args.top_k, args.llm_model)
+            result = ask(args.question, conn, embed_model, args.top_k, args.llm_model, args.retrieval)
     except LLMError as e:
         sys.exit("LLM error: {}".format(e))
 
@@ -227,8 +234,9 @@ def main() -> None:
             cid=s["chunk_id"], score=s["score"]))
     if not result["cited"] and not result["not_found"]:
         print("\n  warning: the answer cites no source - treat it as unsupported.")
-    print("\n{}  |  retrieval {}s, LLM {}s".format(
-        result["llm_model"], result["seconds"]["retrieval"], result["seconds"]["llm"]))
+    print("\n{}  |  {} retrieval {}s, LLM {}s".format(
+        result["llm_model"], result["retrieval"], result["seconds"]["retrieval"],
+        result["seconds"]["llm"]))
 
 
 if __name__ == "__main__":

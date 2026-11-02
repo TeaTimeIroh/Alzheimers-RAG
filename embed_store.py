@@ -3,7 +3,8 @@ embed_store.py - Step 2 of the RAG project: chunks.jsonl -> embeddings -> Postgr
 
   1. reads chunks.jsonl (from chunk_docs.py),
   2. embeds each chunk's `embed_text` with a local sentence-transformers model (no API, no cost),
-  3. creates the `chunks` table and upserts every chunk with its embedding.
+  3. creates the `chunks` table and upserts every chunk with its embedding,
+  4. adds a full-text column (tsvector + GIN index) for keyword and hybrid search.
 
 Re-running is safe: chunks are matched by chunk_id and overwritten, and rows whose chunk_id
 is no longer in chunks.jsonl are deleted, so the table always mirrors the file.
@@ -28,6 +29,44 @@ from sentence_transformers import SentenceTransformer
 DSN = os.environ.get("DATABASE_URL", "postgresql://rag:rag@localhost:5433/rag")
 CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"      # 384 dimensions, ~130 MB, fine on a laptop CPU
+
+
+def create_schema(conn, dim: int) -> None:
+    """The chunks table, its indexes and the full-text column. Safe to run on every import."""
+    conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    register_vector(conn)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chunks (
+            chunk_id   text PRIMARY KEY,
+            doc_id     text NOT NULL,
+            title      text,
+            year       text,
+            pmcid      text,
+            doi        text,
+            section    text,
+            page_start int,
+            page_end   int,
+            n_words    int,
+            text       text NOT NULL,
+            embedding  vector({dim})
+        )""".format(dim=dim))
+    conn.execute("CREATE INDEX IF NOT EXISTS chunks_doc_idx ON chunks (doc_id)")
+    # An index only pays off with many thousands of rows, but this is how you would add one:
+    conn.execute("CREATE INDEX IF NOT EXISTS chunks_emb_idx ON chunks "
+                 "USING hnsw (embedding vector_cosine_ops)")
+    add_fulltext(conn)
+
+
+def add_fulltext(conn) -> None:
+    """Keyword search (search.py --retrieval keyword|hybrid): the stemmed English words of
+    title + section + text in a generated column, so Postgres keeps it up to date on every
+    insert/update, with a GIN index. IF NOT EXISTS: adding it to an existing table needs no
+    re-embedding."""
+    conn.execute("""
+        ALTER TABLE chunks ADD COLUMN IF NOT EXISTS tsv tsvector GENERATED ALWAYS AS (
+            to_tsvector('english', coalesce(title, '') || ' ' || coalesce(section, '') || ' ' || text)
+        ) STORED""")
+    conn.execute("CREATE INDEX IF NOT EXISTS chunks_tsv_idx ON chunks USING gin (tsv)")
 
 
 def main() -> None:
@@ -70,27 +109,7 @@ def main() -> None:
     print("embedded in {:.0f}s, vector size {}".format(time.time() - t0, dim))
 
     with psycopg.connect(DSN, autocommit=True) as conn:
-        conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-        register_vector(conn)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS chunks (
-                chunk_id   text PRIMARY KEY,
-                doc_id     text NOT NULL,
-                title      text,
-                year       text,
-                pmcid      text,
-                doi        text,
-                section    text,
-                page_start int,
-                page_end   int,
-                n_words    int,
-                text       text NOT NULL,
-                embedding  vector({dim})
-            )""".format(dim=dim))
-        conn.execute("CREATE INDEX IF NOT EXISTS chunks_doc_idx ON chunks (doc_id)")
-        # An index only pays off with many thousands of rows, but this is how you would add one:
-        conn.execute("CREATE INDEX IF NOT EXISTS chunks_emb_idx ON chunks "
-                     "USING hnsw (embedding vector_cosine_ops)")
+        create_schema(conn, dim)
         with conn.cursor() as cur:
             for c, v in zip(chunks, vectors):
                 cur.execute("""

@@ -34,11 +34,11 @@ ROWS = [
 @pytest.fixture
 def fake_search(monkeypatch):
     import search
-    monkeypatch.setattr(search, "search", lambda q, model, conn, k: ROWS[:k])
+    monkeypatch.setattr(search, "search", lambda q, model, conn, k, mode=None: ROWS[:k])
 
 
 def fake_ask(answer_text, cited):
-    def _ask(question, conn, embed_model, top_k, llm_model):
+    def _ask(question, conn, embed_model, top_k, llm_model, retrieval=None):
         return {"answer": answer_text, "cited": cited,
                 "not_found": answer.NOT_FOUND.lower().rstrip(".") in answer_text.lower(),
                 "seconds": {"llm": 0.1}, "llm_model": "fake"}
@@ -112,7 +112,7 @@ MULTI_ROWS = [
 @pytest.fixture
 def multi_search(monkeypatch):
     import search
-    monkeypatch.setattr(search, "search", lambda q, model, conn, k: MULTI_ROWS[:k])
+    monkeypatch.setattr(search, "search", lambda q, model, conn, k, mode=None: MULTI_ROWS[:k])
 
 
 def test_multi_needs_every_part_retrieved(multi_search):

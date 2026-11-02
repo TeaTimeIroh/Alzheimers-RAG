@@ -86,11 +86,11 @@ def is_gold(chunk: dict, q: dict) -> bool:
 
 # ----------------------------------------------------------------------------- one question
 def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
-            retrieval_only: bool) -> dict:
+            retrieval_only: bool, retrieval: Optional[str] = None) -> dict:
     from search import search
 
     t0 = time.time()
-    rows = search(q["question"], embed_model, conn, top_k)
+    rows = search(q["question"], embed_model, conn, top_k, retrieval)
     retrieved = [{"n": i, "chunk_id": r[0], "score": round(float(r[7]), 3), "text": r[6]}
                  for i, r in enumerate(rows, start=1)]
     res = OrderedDict(id=q["id"], type=q["type"], question=q["question"], expected=q["expected"],
@@ -109,7 +109,7 @@ def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
     if retrieval_only:
         return res
 
-    result = ask_with_retry(q["question"], conn, embed_model, top_k, llm_model)
+    result = ask_with_retry(q["question"], conn, embed_model, top_k, llm_model, retrieval)
     ans = result["answer"]
     res.update(answer=ans, cited=result["cited"], not_found=result["not_found"],
                seconds_llm=result["seconds"]["llm"], llm_model=result["llm_model"])
@@ -142,11 +142,11 @@ def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
     return res
 
 
-def ask_with_retry(question, conn, embed_model, top_k, llm_model, tries: int = 4) -> dict:
+def ask_with_retry(question, conn, embed_model, top_k, llm_model, retrieval=None, tries: int = 4) -> dict:
     """Free tiers answer 429 (rate limit) or 503 (overloaded) now and then: wait and retry."""
     for attempt in range(tries):
         try:
-            return answer.ask(question, conn, embed_model, top_k, llm_model)
+            return answer.ask(question, conn, embed_model, top_k, llm_model, retrieval)
         except answer.LLMError as e:
             transient = re.search(r"\((429|500|502|503|504)\)", str(e))
             if not transient or attempt == tries - 1:
@@ -200,6 +200,8 @@ def main() -> None:
     ap.add_argument("--top-k", type=int, default=5)
     ap.add_argument("--llm-model", default=None, help="overrides LLM_MODEL from .env")
     ap.add_argument("--retrieval-only", action="store_true", help="skip the LLM, score retrieval")
+    ap.add_argument("--retrieval", choices=("vector", "keyword", "hybrid"), default=None,
+                    help="search mode (default: RETRIEVAL from .env, else vector)")
     ap.add_argument("--only", default="", help="comma-separated question ids, e.g. L1,F3")
     ap.add_argument("--sleep", type=float, default=0.0, help="seconds to wait between questions")
     ap.add_argument("--out-dir", type=Path, default=Path("results"))
@@ -220,24 +222,26 @@ def main() -> None:
     import psycopg
     from pgvector.psycopg import register_vector
     from sentence_transformers import SentenceTransformer
-    from search import DSN, DEFAULT_MODEL
+    from search import DSN, DEFAULT_MODEL, default_mode
 
     try:
         llm_model = None if args.retrieval_only else (args.llm_model or answer.resolve_model())
     except answer.LLMError as e:
         sys.exit("LLM error: {}".format(e))
     embed_model = SentenceTransformer(DEFAULT_MODEL)
+    retrieval = args.retrieval or default_mode()
 
     results = []
-    print("{} questions, top-k {}, LLM: {}\n".format(
-        len(questions), args.top_k, "none (retrieval only)" if args.retrieval_only else llm_model))
+    print("{} questions, top-k {}, {} search, LLM: {}\n".format(
+        len(questions), args.top_k, retrieval,
+        "none (retrieval only)" if args.retrieval_only else llm_model))
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
         for i, q in enumerate(questions):
             if i and args.sleep:
                 time.sleep(args.sleep)
             try:
-                r = run_one(q, conn, embed_model, args.top_k, llm_model, args.retrieval_only)
+                r = run_one(q, conn, embed_model, args.top_k, llm_model, args.retrieval_only, retrieval)
             except answer.LLMError as e:
                 sys.exit("LLM error on {}: {}".format(q["id"], e))
             results.append(r)
@@ -255,10 +259,13 @@ def main() -> None:
 
     args.out_dir.mkdir(exist_ok=True)
     tag = "retrieval" if args.retrieval_only else re.sub(r"[^\w.-]+", "_", llm_model)
+    if retrieval != "vector":          # vector-search files keep the old names, for comparison
+        tag += "_" + retrieval
     out = args.out_dir / "eval_{}_k{}_{}.json".format(tag, args.top_k,
                                                       datetime.now().strftime("%Y%m%d-%H%M"))
     with open(out, "w", encoding="utf-8") as f:
-        json.dump({"llm_model": llm_model, "top_k": args.top_k, "summary": summary,
+        json.dump({"llm_model": llm_model, "retrieval": retrieval, "top_k": args.top_k,
+                   "summary": summary,
                    "results": results}, f, ensure_ascii=False, indent=2)
     print("\nfull answers saved to {}  (review the partial/wrong ones by hand)".format(out))
 

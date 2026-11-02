@@ -16,6 +16,22 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.13", "3.14"]
+    # A real Postgres + pgvector (the image docker-compose.yml uses) for tests/test_search_db.py,
+    # which checks the full-text and hybrid SQL. Its tables live in a throwaway schema.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: rag
+          POSTGRES_PASSWORD: rag
+          POSTGRES_DB: rag
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rag"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -28,4 +44,6 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
       - name: Tests (pytest)
-        run: pytest
+        run: pytest -rs
+        env:
+          TEST_DATABASE_URL: postgresql://rag:rag@localhost:5432/rag
