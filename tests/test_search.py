@@ -75,11 +75,11 @@ def test_search_dispatches_on_mode(monkeypatch):
 
 def test_default_mode_comes_from_environment(monkeypatch):
     monkeypatch.delenv("RETRIEVAL", raising=False)
-    assert search.default_mode() == "vector"
-    monkeypatch.setenv("RETRIEVAL", " Hybrid ")
     assert search.default_mode() == "hybrid"
-    monkeypatch.setattr(search, "hybrid_search", lambda q, m, c, k: ["used hybrid"])
-    assert search.search("q", None, None) == ["used hybrid"]
+    monkeypatch.setenv("RETRIEVAL", " Vector ")
+    assert search.default_mode() == "vector"
+    monkeypatch.setattr(search, "vector_search", lambda q, m, c, k: ["used vector"])
+    assert search.search("q", None, None) == ["used vector"]
 
 
 def test_unknown_mode_is_an_error():

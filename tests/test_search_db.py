@@ -94,3 +94,17 @@ def test_hybrid_merges_vector_and_keyword_results(conn):
     rows = search.search(question, FakeModel(), conn, 2, "hybrid")
     assert {r[0] for r in rows} == {"b:0001", "b:0002"}  # hybrid keeps both
     assert all(r[7] > 0 for r in rows)
+
+
+def test_missing_fulltext_column_gives_a_clear_error():
+    with psycopg.connect(DSN, autocommit=True) as c:
+        c.execute("DROP SCHEMA IF EXISTS rag_test_old CASCADE")
+        c.execute("CREATE SCHEMA rag_test_old")
+        c.execute("SET search_path TO rag_test_old")
+        c.execute("CREATE TABLE chunks (chunk_id text, title text, year text, section text, "
+                  "page_start int, page_end int, text text)")      # a table from before hybrid search
+        try:
+            with pytest.raises(RuntimeError, match="embed_store.py"):
+                search.keyword_search("autopsy interval", c, 5)
+        finally:
+            c.execute("DROP SCHEMA rag_test_old CASCADE")

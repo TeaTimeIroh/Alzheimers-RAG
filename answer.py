@@ -144,7 +144,7 @@ def cited_numbers(answer: str, n_sources: int) -> List[int]:
 def ask(question: str, conn, embed_model, top_k: int = 5, llm_model: Optional[str] = None,
         retrieval: Optional[str] = None) -> dict:
     """Retrieve, prompt, answer. Returns everything the CLI, the API and the evaluation need.
-    retrieval: vector | keyword | hybrid (default: RETRIEVAL from .env, else vector)."""
+    retrieval: vector | keyword | hybrid (default: RETRIEVAL from .env, else hybrid)."""
     from search import default_mode, search      # same retrieval code as search.py
 
     retrieval = retrieval or default_mode()
@@ -182,7 +182,7 @@ def main() -> None:
     ap.add_argument("question", nargs="?")
     ap.add_argument("--top-k", type=int, default=5)
     ap.add_argument("--retrieval", choices=("vector", "keyword", "hybrid"), default=None,
-                    help="overrides RETRIEVAL from .env (default: vector)")
+                    help="overrides RETRIEVAL from .env (default: hybrid)")
     ap.add_argument("--embed-model", default=None, help="must match embed_store.py (default: BGE small)")
     ap.add_argument("--llm-model", default=None, help="overrides LLM_MODEL")
     ap.add_argument("--show-prompt", action="store_true", help="print exactly what the LLM received")

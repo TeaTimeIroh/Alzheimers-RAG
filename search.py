@@ -13,7 +13,8 @@ Run:  python search.py "What does APOE do to amyloid and tau?"
       python search.py "sex differences in genetic risk" --top-k 8 --show-text --retrieval hybrid
 
 If the right passage is not in the top results here, the LLM cannot fix it later.
-The default mode comes from RETRIEVAL in the environment / .env (vector if unset).
+The default mode comes from RETRIEVAL in the environment / .env (hybrid if unset: it ranked the
+answer passage best in the evaluation - see the README).
 """
 import argparse
 import os
@@ -50,6 +51,16 @@ def vector_search(query: str, model, conn, k: int) -> List[tuple]:
 def keyword_search(query: str, conn, k: int) -> List[tuple]:
     # normalization 1: divide the rank by 1 + log(passage length), so long passages don't win
     # just by containing more words
+    import psycopg
+    try:
+        return _keyword_rows(query, conn, k)
+    except psycopg.errors.UndefinedColumn as e:
+        raise RuntimeError("The chunks table has no full-text column yet (added for keyword/hybrid "
+                           "search). Run:  python embed_store.py --chunks chunks.jsonl\n"
+                           "or use --retrieval vector.") from e
+
+
+def _keyword_rows(query: str, conn, k: int) -> List[tuple]:
     return conn.execute(
         """WITH q AS (SELECT {tsq} AS query)
            SELECT {cols}, ts_rank(tsv, q.query, 1) AS score
@@ -80,7 +91,7 @@ def hybrid_search(query: str, model, conn, k: int) -> List[tuple]:
 
 def default_mode() -> str:
     """RETRIEVAL from the environment or .env (read when needed, after .env has been loaded)."""
-    return os.environ.get("RETRIEVAL", "vector").strip().lower() or "vector"
+    return os.environ.get("RETRIEVAL", "hybrid").strip().lower() or "hybrid"
 
 
 def search(query: str, model, conn, top_k: int = 5, mode: Optional[str] = None) -> List[tuple]:

@@ -97,7 +97,9 @@ def main() -> None:
 
     print("loading model {} (first run downloads it) ...".format(args.model))
     model = SentenceTransformer(args.model)
-    dim = model.get_sentence_embedding_dimension()
+    # renamed in newer sentence-transformers; keep working with both
+    get_dim = getattr(model, "get_embedding_dimension", None) or model.get_sentence_embedding_dimension
+    dim = get_dim()
 
     t0 = time.time()
     vectors = model.encode(

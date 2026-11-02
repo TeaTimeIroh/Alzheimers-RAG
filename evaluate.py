@@ -201,7 +201,7 @@ def main() -> None:
     ap.add_argument("--llm-model", default=None, help="overrides LLM_MODEL from .env")
     ap.add_argument("--retrieval-only", action="store_true", help="skip the LLM, score retrieval")
     ap.add_argument("--retrieval", choices=("vector", "keyword", "hybrid"), default=None,
-                    help="search mode (default: RETRIEVAL from .env, else vector)")
+                    help="search mode (default: RETRIEVAL from .env, else hybrid)")
     ap.add_argument("--only", default="", help="comma-separated question ids, e.g. L1,F3")
     ap.add_argument("--sleep", type=float, default=0.0, help="seconds to wait between questions")
     ap.add_argument("--out-dir", type=Path, default=Path("results"))
