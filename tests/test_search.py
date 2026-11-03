@@ -85,3 +85,31 @@ def test_default_mode_comes_from_environment(monkeypatch):
 def test_unknown_mode_is_an_error():
     with pytest.raises(ValueError, match="retrieval mode"):
         search.search("q", None, None, 5, "bm25")
+
+
+# ----------------------------------------------------------------------------- passages per paper
+def test_cap_per_paper_keeps_order_and_limits_each_paper():
+    rows = [row(cid, 0) for cid in ["a:1", "a:2", "a:3", "b:1", "a:4", "c:1"]]
+    assert [r[0] for r in search.cap_per_paper(rows, 2)] == ["a:1", "a:2", "b:1", "c:1"]
+    assert [r[0] for r in search.cap_per_paper(rows, 1)] == ["a:1", "b:1", "c:1"]
+    assert search.paper_of("41588_2026_Article_2713:0024") == "41588_2026_Article_2713"
+
+
+def test_cap_draws_from_a_larger_pool(monkeypatch):
+    pool_sizes = []
+
+    def vec(query, model, conn, k):
+        pool_sizes.append(k)
+        return [row("a:{}".format(i), 0) for i in range(k - 1)] + [row("b:1", 0)]
+
+    monkeypatch.setattr(search, "vector_search", vec)
+    rows = search.search("q", None, None, 3, "vector", max_per_paper=2)
+    assert pool_sizes == [search.CANDIDATES]
+    assert [r[0] for r in rows] == ["a:0", "a:1", "b:1"]   # the second paper got the freed slot
+    rows = search.search("q", None, None, 3, "vector")       # no cap: unchanged behaviour
+    assert pool_sizes[-1] == 3 and [r[0] for r in rows] == ["a:0", "a:1", "b:1"]
+
+
+def test_hybrid_with_cap_ranks_the_whole_fused_list(fake_methods):
+    rows = search.search("q", None, None, 2, "hybrid", max_per_paper=1)
+    assert [r[0] for r in rows] == ["both", "v1"]       # distinct "papers" (ids without ':')

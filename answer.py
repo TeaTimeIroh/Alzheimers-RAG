@@ -97,10 +97,14 @@ def resolve_model() -> str:
     return models[0]
 
 
-def chat(messages: List[Dict[str, str]], model: str, temperature: float = 0.0,
-         max_tokens: int = 700) -> str:
+def chat_message(messages: List[dict], model: str, temperature: float = 0.0,
+                 max_tokens: int = 700, tools: Optional[List[dict]] = None) -> dict:
+    """One chat-completions call; returns the assistant message as the API sent it (it may
+    contain "tool_calls" when `tools` are offered). Raises LLMError on any failure."""
     payload = {"model": model, "messages": messages,
                "temperature": temperature, "max_tokens": max_tokens}
+    if tools:
+        payload["tools"] = tools
     try:
         r = requests.post(LLM_BASE_URL + "/chat/completions", headers=_headers(),
                           json=payload, timeout=LLM_TIMEOUT)
@@ -112,9 +116,20 @@ def chat(messages: List[Dict[str, str]], model: str, temperature: float = 0.0,
                        .format(LLM_TIMEOUT))
     if r.status_code != 200:
         raise LLMError("LLM request failed ({}): {}".format(r.status_code, r.text[:500]))
-    content = r.json()["choices"][0]["message"].get("content") or ""
+    try:
+        return r.json()["choices"][0]["message"]
+    except (ValueError, KeyError, IndexError):
+        raise LLMError("Unexpected response from the LLM server: {}".format(r.text[:300]))
+
+
+def strip_thinking(content: Optional[str]) -> str:
     # Reasoning models (e.g. Qwen3 thinking variants) may include their thinking; drop it.
-    return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+    return re.sub(r"<think>.*?</think>", "", content or "", flags=re.DOTALL).strip()
+
+
+def chat(messages: List[Dict[str, str]], model: str, temperature: float = 0.0,
+         max_tokens: int = 700) -> str:
+    return strip_thinking(chat_message(messages, model, temperature, max_tokens).get("content"))
 
 
 # ----------------------------------------------------------------------------- RAG
@@ -142,14 +157,14 @@ def cited_numbers(answer: str, n_sources: int) -> List[int]:
 
 
 def ask(question: str, conn, embed_model, top_k: int = 5, llm_model: Optional[str] = None,
-        retrieval: Optional[str] = None) -> dict:
+        retrieval: Optional[str] = None, max_per_paper: Optional[int] = None) -> dict:
     """Retrieve, prompt, answer. Returns everything the CLI, the API and the evaluation need.
     retrieval: vector | keyword | hybrid (default: RETRIEVAL from .env, else hybrid)."""
     from search import default_mode, search      # same retrieval code as search.py
 
     retrieval = retrieval or default_mode()
     t0 = time.time()
-    rows = search(question, embed_model, conn, top_k, retrieval)
+    rows = search(question, embed_model, conn, top_k, retrieval, max_per_paper)
     t_retrieval = time.time() - t0
     hits = []
     for n, (cid, title, year, section, p0, p1, text, score) in enumerate(rows, start=1):
@@ -183,6 +198,8 @@ def main() -> None:
     ap.add_argument("--top-k", type=int, default=5)
     ap.add_argument("--retrieval", choices=("vector", "keyword", "hybrid"), default=None,
                     help="overrides RETRIEVAL from .env (default: hybrid)")
+    ap.add_argument("--max-per-paper", type=int, default=None,
+                    help="at most this many passages from one paper (default: no cap)")
     ap.add_argument("--embed-model", default=None, help="must match embed_store.py (default: BGE small)")
     ap.add_argument("--llm-model", default=None, help="overrides LLM_MODEL")
     ap.add_argument("--show-prompt", action="store_true", help="print exactly what the LLM received")
@@ -210,7 +227,8 @@ def main() -> None:
         embed_model = SentenceTransformer(args.embed_model or DEFAULT_MODEL)
         with psycopg.connect(DSN) as conn:
             register_vector(conn)
-            result = ask(args.question, conn, embed_model, args.top_k, args.llm_model, args.retrieval)
+            result = ask(args.question, conn, embed_model, args.top_k, args.llm_model, args.retrieval,
+                         args.max_per_paper)
     except LLMError as e:
         sys.exit("LLM error: {}".format(e))
 

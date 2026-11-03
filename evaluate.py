@@ -86,17 +86,55 @@ def is_gold(chunk: dict, q: dict) -> bool:
 
 # ----------------------------------------------------------------------------- one question
 def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
-            retrieval_only: bool, retrieval: Optional[str] = None) -> dict:
+            retrieval_only: bool, retrieval: Optional[str] = None,
+            max_per_paper: Optional[int] = None, mode: str = "pipeline") -> dict:
     from search import search
 
+    if mode == "agent":
+        return run_agent(q, conn, embed_model, llm_model, retrieval)
     t0 = time.time()
-    rows = search(q["question"], embed_model, conn, top_k, retrieval)
+    rows = search(q["question"], embed_model, conn, top_k, retrieval, max_per_paper)
     retrieved = [{"n": i, "chunk_id": r[0], "score": round(float(r[7]), 3), "text": r[6]}
                  for i, r in enumerate(rows, start=1)]
     res = OrderedDict(id=q["id"], type=q["type"], question=q["question"], expected=q["expected"],
                       retrieved=[r["chunk_id"] for r in retrieved],
                       seconds_retrieval=round(time.time() - t0, 2))
 
+    texts = {r["chunk_id"]: r["text"] for r in retrieved}
+    if retrieval_only:
+        return score(q, res, texts)
+
+    result = ask_with_retry(q["question"], conn, embed_model, top_k, llm_model, retrieval,
+                            max_per_paper)
+    res.update(answer=result["answer"], cited=result["cited"], not_found=result["not_found"],
+               seconds_llm=result["seconds"]["llm"], llm_model=result["llm_model"])
+    return score(q, res, texts)
+
+
+def run_agent(q: dict, conn, embed_model, llm_model: Optional[str],
+              retrieval: Optional[str]) -> dict:
+    """Same scoring as the pipeline. `retrieved` is every passage the agent saw, in the order
+    it saw them (= its [n] numbers), so "found" means: some tool call returned the evidence."""
+    import agent
+    result = agent.ask_agent(q["question"], conn, embed_model, llm_model, retrieval)
+    res = OrderedDict(id=q["id"], type=q["type"], question=q["question"], expected=q["expected"],
+                      retrieved=[h["chunk_id"] for h in result["hits"]],
+                      seconds_retrieval=result["seconds"]["retrieval"],
+                      answer=result["answer"], cited=result["cited"], not_found=result["not_found"],
+                      seconds_llm=result["seconds"]["llm"], llm_model=result["llm_model"],
+                      steps=result["steps"], llm_calls=result["llm_calls"],
+                      searched=result.get("searched", True), nudges=result.get("nudges", 0),
+                      gave_up=result.get("gave_up", False), trace=result["trace"])
+    return score(q, res, {h["chunk_id"]: h["text"] for h in result["hits"]})
+
+
+def score(q: dict, res: dict, texts: Dict[str, str]) -> dict:
+    """Score one result in place: where the evidence was retrieved and, if the result has an
+    answer, the verdict. `texts` maps the retrieved chunk ids to their text. Used by live runs
+    and by --rescore, so a scoring change can be applied to saved answers without new LLM calls."""
+    for key in ("hit_rank", "parts_found", "cited_gold", "facts_matched", "verdict"):
+        res.pop(key, None)
+    retrieved = [{"n": i, "text": texts[cid]} for i, cid in enumerate(res["retrieved"], start=1)]
     parts = evidence_parts(q)
     # for each required part: the ranks of the retrieved chunks that contain it
     part_ns = [{r["n"] for r in retrieved if contains_evidence(r["text"], part)} for part in parts]
@@ -105,29 +143,23 @@ def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
     res["hit_rank"] = max(min(ns) for ns in part_ns) if found else None
     if len(parts) > 1:
         res["parts_found"] = "{}/{}".format(sum(bool(ns) for ns in part_ns), len(parts))
-
-    if retrieval_only:
+    if "answer" not in res:                       # retrieval-only result
         return res
 
-    result = ask_with_retry(q["question"], conn, embed_model, top_k, llm_model, retrieval)
-    ans = result["answer"]
-    res.update(answer=ans, cited=result["cited"], not_found=result["not_found"],
-               seconds_llm=result["seconds"]["llm"], llm_model=result["llm_model"])
-
     if q["type"] == "unanswerable":
-        res["verdict"] = "correct" if result["not_found"] else "wrong (answered)"
+        res["verdict"] = "correct" if res["not_found"] else "wrong (answered)"
         return res
 
     groups = q["must_include"]
     # the answer must cite, for every required part, a source that contains it
-    res["cited_gold"] = bool(part_ns) and all(any(n in ns for n in result["cited"]) for ns in part_ns)
-    if result["not_found"]:
+    res["cited_gold"] = bool(part_ns) and all(any(n in ns for n in res["cited"]) for ns in part_ns)
+    if res["not_found"]:
         # a refusal often explains what it did find ("the sources mention MD, but..."):
         # those keywords are not an answer, so facts are not scored
         res["facts_matched"] = "-"
         res["verdict"] = "refused" if found else "refused (not retrieved)"
         return res
-    matched = score_answer(ans, groups)
+    matched = score_answer(res["answer"], groups)
     res["facts_matched"] = "{}/{}".format(matched, len(groups))
     if matched == len(groups) and not found:
         # right words, but the passages that support them were not in the context:
@@ -142,11 +174,42 @@ def run_one(q: dict, conn, embed_model, top_k: int, llm_model: Optional[str],
     return res
 
 
-def ask_with_retry(question, conn, embed_model, top_k, llm_model, retrieval=None, tries: int = 4) -> dict:
+def rescore(path: Path, questions: List[dict], conn) -> Path:
+    """Re-score a saved results file with the current questions and scoring rules - no search,
+    no LLM calls: the saved retrieved chunk ids and answers are kept as they were. Writes
+    <name>_rescored.json next to the original and returns its path."""
+    data = json.load(open(path, encoding="utf-8"))
+    by_id = {q["id"]: q for q in questions}
+    ids = sorted({cid for r in data["results"] for cid in r["retrieved"]})
+    texts = dict(conn.execute("SELECT chunk_id, text FROM chunks WHERE chunk_id = ANY(%s)",
+                              (ids,)).fetchall())
+    missing = set(ids) - set(texts)
+    if missing:
+        sys.exit("chunks no longer in the database: {}".format(", ".join(sorted(missing)[:5])))
+    changed = []
+    for r in data["results"]:
+        before = (r.get("hit_rank"), r.get("verdict"))
+        r["question"], r["expected"] = by_id[r["id"]]["question"], by_id[r["id"]]["expected"]
+        score(by_id[r["id"]], r, texts)
+        if (r.get("hit_rank"), r.get("verdict")) != before:
+            changed.append("{} {}/{} -> {}/{}".format(r["id"], *before, r.get("hit_rank"), r.get("verdict")))
+    data["summary"] = summarise(data["results"], data["top_k"], data.get("llm_model") is None,
+                                agent=data.get("mode") == "agent")
+    data["rescored"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    out = path.with_name(path.stem + "_rescored.json")
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    print("{}\n  changed: {}".format(path.name, "; ".join(changed) or "nothing"))
+    print_summary(data["summary"])
+    return out
+
+
+def ask_with_retry(question, conn, embed_model, top_k, llm_model, retrieval=None,
+                   max_per_paper=None, tries: int = 4) -> dict:
     """Free tiers answer 429 (rate limit) or 503 (overloaded) now and then: wait and retry."""
     for attempt in range(tries):
         try:
-            return answer.ask(question, conn, embed_model, top_k, llm_model, retrieval)
+            return answer.ask(question, conn, embed_model, top_k, llm_model, retrieval, max_per_paper)
         except answer.LLMError as e:
             transient = re.search(r"\((429|500|502|503|504)\)", str(e))
             if not transient or attempt == tries - 1:
@@ -158,14 +221,18 @@ def ask_with_retry(question, conn, embed_model, top_k, llm_model, retrieval=None
 
 
 # ----------------------------------------------------------------------------- summary
-def summarise(results: List[dict], top_k: int, retrieval_only: bool) -> Dict[str, dict]:
+def summarise(results: List[dict], top_k: int, retrieval_only: bool,
+              agent: bool = False) -> Dict[str, dict]:
     summary = OrderedDict()
     for t in TYPES + ("all answerable",):
         rs = [r for r in results if (r["type"] == t if t in TYPES else r["type"] != "unanswerable")]
         if not rs or (retrieval_only and t == "unanswerable"):   # nothing to score there
             continue
         s = OrderedDict(n=len(rs))
-        if t != "unanswerable":
+        if t != "unanswerable" and agent:
+            # the agent's passages are in the order it found them, not a ranking: no hit@1/MRR
+            s["evidence found"] = sum(r["hit_rank"] is not None for r in rs)
+        elif t != "unanswerable":
             s["hit@{}".format(top_k)] = sum(r["hit_rank"] is not None for r in rs)
             s["hit@1"] = sum(r["hit_rank"] == 1 for r in rs)
             ranks = [1.0 / r["hit_rank"] for r in rs if r["hit_rank"]]
@@ -176,6 +243,14 @@ def summarise(results: List[dict], top_k: int, retrieval_only: bool) -> Dict[str
             if t != "unanswerable":
                 s["cited right source"] = sum(bool(r.get("cited_gold")) for r in rs)
             s["avg LLM s"] = round(sum(r["seconds_llm"] for r in rs) / len(rs), 1)
+        if agent:
+            s["avg tool steps"] = round(sum(r["steps"] for r in rs) / len(rs), 1)
+            s["avg LLM calls"] = round(sum(r["llm_calls"] for r in rs) / len(rs), 1)
+            s["avg passages seen"] = round(sum(len(r["retrieved"]) for r in rs) / len(rs), 1)
+            # answers given without a single search (only possible if the model ignores the
+            # search-first rule until the step limit), and answers sent back by that rule
+            s["never searched"] = sum(not r.get("searched", True) for r in rs)
+            s["sent back to search"] = sum(bool(r.get("nudges")) for r in rs)
         summary[t] = s
     return summary
 
@@ -202,9 +277,16 @@ def main() -> None:
     ap.add_argument("--retrieval-only", action="store_true", help="skip the LLM, score retrieval")
     ap.add_argument("--retrieval", choices=("vector", "keyword", "hybrid"), default=None,
                     help="search mode (default: RETRIEVAL from .env, else hybrid)")
+    ap.add_argument("--max-per-paper", type=int, default=None,
+                    help="at most this many passages from one paper (default: no cap)")
+    ap.add_argument("--mode", choices=("pipeline", "agent"), default="pipeline",
+                    help="pipeline: one search, then answer (answer.py); agent: the LLM searches "
+                         "with tools as often as it needs (agent.py)")
     ap.add_argument("--only", default="", help="comma-separated question ids, e.g. L1,F3")
     ap.add_argument("--sleep", type=float, default=0.0, help="seconds to wait between questions")
     ap.add_argument("--out-dir", type=Path, default=Path("results"))
+    ap.add_argument("--rescore", type=Path, nargs="+", metavar="RESULTS_JSON",
+                    help="re-score saved results with the current questions (no search, no LLM)")
     args = ap.parse_args()
 
     try:
@@ -213,6 +295,13 @@ def main() -> None:
         pass
 
     questions = [json.loads(line) for line in open(args.questions, encoding="utf-8") if line.strip()]
+    if args.rescore:
+        import psycopg
+        from search import DSN
+        with psycopg.connect(DSN, connect_timeout=5) as conn:
+            for path in args.rescore:
+                print("saved to {}\n".format(rescore(path, questions, conn)))
+        return
     if args.only:
         wanted = {x.strip() for x in args.only.split(",")}
         questions = [q for q in questions if q["id"] in wanted]
@@ -230,10 +319,15 @@ def main() -> None:
         sys.exit("LLM error: {}".format(e))
     embed_model = SentenceTransformer(DEFAULT_MODEL)
     retrieval = args.retrieval or default_mode()
+    agent_mode = args.mode == "agent"
+    if agent_mode and (args.retrieval_only or args.max_per_paper):
+        sys.exit("--mode agent needs an LLM and decides its own searches: "
+                 "drop --retrieval-only / --max-per-paper")
 
     results = []
-    print("{} questions, top-k {}, {} search, LLM: {}\n".format(
-        len(questions), args.top_k, retrieval,
+    print("{} questions, {}, {} search{}, LLM: {}\n".format(
+        len(questions), "agent (tools)" if agent_mode else "top-k {}".format(args.top_k), retrieval,
+        ", max {} per paper".format(args.max_per_paper) if args.max_per_paper else "",
         "none (retrieval only)" if args.retrieval_only else llm_model))
     with psycopg.connect(DSN) as conn:
         register_vector(conn)
@@ -241,12 +335,16 @@ def main() -> None:
             if i and args.sleep:
                 time.sleep(args.sleep)
             try:
-                r = run_one(q, conn, embed_model, args.top_k, llm_model, args.retrieval_only, retrieval)
+                r = run_one(q, conn, embed_model, args.top_k, llm_model, args.retrieval_only, retrieval,
+                            args.max_per_paper, args.mode)
             except answer.LLMError as e:
                 sys.exit("LLM error on {}: {}".format(q["id"], e))
             results.append(r)
             rank = "-" if q["type"] == "unanswerable" else (r["hit_rank"] or "miss")
-            line = "  {:<3} {:<12} retrieved@{:<4}".format(r["id"], r["type"], rank)
+            if agent_mode:   # position among the passages it saw, and how much it searched
+                line = "  {:<3} {:<12} found@{:<3} {} steps".format(r["id"], r["type"], rank, r["steps"])
+            else:
+                line = "  {:<3} {:<12} retrieved@{:<4}".format(r["id"], r["type"], rank)
             if not args.retrieval_only:
                 line += " {:<26} {:>5} cited-right:{:<5} {:>5.1f}s".format(
                     r["verdict"], r.get("facts_matched", ""),
@@ -254,17 +352,24 @@ def main() -> None:
                     r["seconds_llm"])
             print(line, flush=True)
 
-    summary = summarise(results, args.top_k, args.retrieval_only)
+    summary = summarise(results, args.top_k, args.retrieval_only, agent=agent_mode)
     print_summary(summary)
 
     args.out_dir.mkdir(exist_ok=True)
     tag = "retrieval" if args.retrieval_only else re.sub(r"[^\w.-]+", "_", llm_model)
     if retrieval != "vector":          # vector-search files keep the old names, for comparison
         tag += "_" + retrieval
-    out = args.out_dir / "eval_{}_k{}_{}.json".format(tag, args.top_k,
-                                                      datetime.now().strftime("%Y%m%d-%H%M"))
+    if args.max_per_paper:
+        tag += "_cap{}".format(args.max_per_paper)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    if agent_mode:
+        out = args.out_dir / "eval_{}_agent_{}.json".format(tag, stamp)
+    else:
+        out = args.out_dir / "eval_{}_k{}_{}.json".format(tag, args.top_k, stamp)
     with open(out, "w", encoding="utf-8") as f:
-        json.dump({"llm_model": llm_model, "retrieval": retrieval, "top_k": args.top_k,
+        json.dump({"llm_model": llm_model, "mode": args.mode, "retrieval": retrieval,
+                   "top_k": args.top_k,
+                   "max_per_paper": args.max_per_paper,
                    "summary": summary,
                    "results": results}, f, ensure_ascii=False, indent=2)
     print("\nfull answers saved to {}  (review the partial/wrong ones by hand)".format(out))
