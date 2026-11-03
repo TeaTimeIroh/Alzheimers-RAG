@@ -10,7 +10,9 @@ papers don't contain the answer, it says so instead of guessing.
 Built end to end in Python: PDF parsing → chunking → embeddings in **PostgreSQL + pgvector** →
 **hybrid retrieval** (vector + full-text search, fused) → LLM answer with citations →
 **FastAPI** REST API → an evaluation suite with known answers, used to compare retrieval
-methods and a local LLM with a cloud LLM.
+methods and a local LLM with a cloud LLM. On top of that: a **tool-using agent** that decides
+its own searches (which fixed most questions that need two papers), and an **LLM judge** that
+re-grades the saved answers as a check on the keyword scoring.
 
 ![Example answer with citations](docs/images/answer_gemini.png)
 
@@ -39,25 +41,122 @@ flowchart LR
 | Retrieve | [`search.py`](search.py) | Three modes: `vector` (cosine similarity), `keyword` (Postgres full-text) and `hybrid` (default: both, merged with Reciprocal Rank Fusion); also a CLI to inspect retrieval on its own |
 | Answer | [`answer.py`](answer.py) | Numbers the retrieved passages, instructs the LLM to answer only from them and cite `[n]`, or reply that the papers don't contain the answer |
 | Serve | [`api.py`](api.py) | FastAPI: `POST /ask`, `GET /search`, `GET /health`, Swagger UI at `/docs` |
-| Evaluate | [`evaluate.py`](evaluate.py) | Runs the test questions; scores retrieval (hit@k, MRR), answers, citations and refusals per question type |
+| Agent | [`agent.py`](agent.py) | The LLM gets tools instead of fixed passages - `search` (all papers), `search_paper` (one paper), `cannot_answer` - and decides what to search, up to 6 steps; passages keep their `[n]` number across searches |
+| Evaluate | [`evaluate.py`](evaluate.py) | Runs the test questions through the pipeline or the agent; scores retrieval (hit@k, MRR), answers, citations and refusals per question type |
+| Judge | [`judge.py`](judge.py) | After a run: a separate LLM grades every saved answer against the reference and the passages it cites, and lists where it disagrees with the keyword scoring |
 
 Any OpenAI-compatible chat API works as the LLM: the backend is chosen in `.env`, so the same
 code runs against a local model in LM Studio or Google's Gemini API.
 
 ## Numbers
 
-Measured with [`evaluate.py`](evaluate.py) on 30 questions with known answers
+Measured with [`evaluate.py`](evaluate.py) on 38 questions with known answers
 ([`eval_questions.jsonl`](eval_questions.jsonl)):
 
 - 11 about a paper's **findings**, 4 of them deliberately paraphrased so they don't share the
   paper's wording;
 - 11 **lookups** of a specific number or name, most of them from the body text rather than
   the abstract;
-- 2 that need **two papers** (the same tracer / the same measure in both studies);
+- 10 that need **two papers** (a tracer, a mouse model or a cohort both studies used; which
+  study was larger; whether two studies agree);
 - 6 that **cannot** be answered from the papers - 3 of them near misses about a study that
   *is* in the collection but doesn't report the detail asked for.
 
-### Answers (hybrid search, top 5 passages)
+The first 30 questions (with only 2 two-paper ones) were used for the retrieval comparison;
+the 8 extra two-paper questions were added - and the single-search baseline run on them -
+before the agent was written.
+
+### Agent vs single search (38 questions)
+
+The single-search pipeline retrieves 5 passages once and answers from them. For a question
+about two studies, all 5 slots usually go to the paper that matches best. The agent instead
+calls search tools itself - typically once per study - and answers from everything it found.
+
+| | Pipeline<br/>Gemini | Pipeline<br/>Qwen | **Agent<br/>Gemini** | **Agent<br/>Qwen** |
+|---|---|---|---|---|
+| Single-paper questions correct (22) | 22 | 22 | **22** | 20 |
+| Two-paper: evidence from both papers found (10) | 2 | 2 | **9** | 6 |
+| Two-paper: correct (10) | 1 | 2 | **9** | 6 |
+| Two-paper: right words, evidence never retrieved ("unsupported") | 2 | 6 | 1 | 2 |
+| Unanswerable questions refused (6) | 6 | 6 | 5 \* | 6 |
+| Answer cites a passage containing the answer (32) | 24 | 21 | 28 | 25 |
+| LLM calls per answerable question | 1 | 1 | 2.2 | 2.2 |
+| LLM time per answerable question | 3.2 s | 22.9 s | 4.9 s | 63.8 s |
+
+*Gemini 3.1 Flash-Lite through the free API; Qwen3-Coder 30B-A3B (Q4_K_M) locally in
+LM Studio. Hybrid search, top 5 per search. Scored by the keyword rules; the judge's
+second opinion is below. \* U6: a correct refusal in its own words (see the judge section).*
+
+- **Letting the model search fixed most two-paper questions**: Gemini 1 → 9 of 10, Qwen
+  2 → 6. The cost is about 2.2 LLM calls instead of 1, with the whole conversation (including
+  every passage found so far) re-sent on each call - for the local model that is ~64 s per
+  question instead of ~23 s.
+- **A cheaper fix was tried first and is kept as an option** (`--max-per-paper`): capping
+  passages per paper raised two-paper retrieval from 2 to 3 (max 3 per paper) or 4 (max 2)
+  of 10, but single-paper retrieval dropped from 22 to 21 or 18 of 22 - it takes slots from
+  questions that need several passages of one paper.
+- **Single-paper questions don't need an agent**: Gemini's agent searched exactly once for
+  all 22. Qwen's two non-correct ones are about wording, not search: F8 found the right
+  passage and listed the right artefacts, but opened with the refusal sentence; F11 is
+  correct when read (the keyword rule was too strict - the judge caught it).
+- **The local model is the weaker agent.** Qwen found both papers' evidence for only 6 of
+  10 two-paper questions, and for M9 it stated that "only APOE" is found in both strata -
+  a claim no passage makes (the answer is all three genes it was asked about).
+- **The rules had to move into code.** Early versions of the agent answered some
+  questions - including unanswerable ones - without searching, and Gemini paraphrased its
+  refusals so they couldn't be counted. Now refusing is a tool (`cannot_answer`) with a
+  reason, and a final answer or refusal before the first search is sent back with an
+  instruction to search; in the final runs no question went unsearched.
+- **Citations lag behind answers for two-paper questions**: Gemini's 9 correct two-paper
+  answers cite a passage for both papers in only 6.
+
+### LLM judge: a second opinion on the scoring
+
+The keyword rules can't see a reworded refusal, a reversed comparison or a claim the cited
+passage doesn't make. [`judge.py`](judge.py) runs after an evaluation, on the saved answers:
+a separate model gets the question, the reference answer, the system's answer and the text
+of the passages it cited, and returns a verdict (correct / partial / wrong / refused),
+whether the cited passages support every claim, and a one-line reason. Nothing is
+re-generated, so one judge grades every model and mode.
+
+The judge here is **Gemini 3.5 Flash-Lite** - a newer, different model from the 3.1
+Flash-Lite that answered, but from the same family, so some self-preference towards the
+Gemini run can't be ruled out. The intended judge, Gemini 3.8 Flash, was not usable on the
+free tier: 20 requests a day, ~4-5 minutes per call and repeated "high demand" errors. It
+graded 17 of the (easy) single-paper answers before running out, agreeing with Flash-Lite on
+all of them. Answers are graded 4 per call to fit free-tier quotas.
+
+| | Agent Gemini | Agent Qwen |
+|---|---|---|
+| Judge: answerable questions correct (32) | 32 | 29 |
+| Judge: unanswerable questions refused (6) | 6 | 5 |
+| Cited passages back every claim (answers with claims) | 34 / 34 | 30 / 34 |
+| Same verdict as the keyword rules | 37 / 38 | 33 / 38 |
+
+Where the two disagree - and one case where both are wrong - reading the answers gives:
+
+| Answer | Keyword rules | Judge | Reading the answer |
+|---|---|---|---|
+| Gemini U6 | wrong (answered) | correct (refused) | **Judge right**: "did not report a hazard ratio", without the fixed refusal sentence |
+| Qwen F11 | partial | correct | **Judge right**: "not mainly frontal, predominantly temporoparietal" |
+| Qwen M6 | partial | refused | **Judge right**: "I cannot definitively identify ..." |
+| Qwen M9 | unsupported | wrong | **Judge right**: "only APOE" is false, not merely unsupported |
+| Qwen U6 | correct | wrong | **Rules right**: same content as Gemini's U6 plus the refusal sentence - the judge contradicts itself |
+| Qwen F8 | refused | correct | **Rules right**: the answer opens with "I could not find this"; the judge's reason ("common knowledge") is wrong |
+| Gemini M8 | correct | correct | **Both wrong**: the answer first names the *smaller* study as larger, then corrects itself - partial at best |
+
+Two more disagreements are still open: for Gemini M5 and Qwen M10 the rules say the
+supporting passage was never retrieved, the judge says the cited passages do support the
+answer - possibly passages missing from the questions' evidence lists, as happened before.
+
+What this says: the judge fixed 4 rule errors and made 2 of its own, and neither method
+caught the self-contradicting M8. A lite judge is not more reliable than the keyword rules
+- it is lenient (all 38 Gemini answers "correct") - but the two fail on *different*
+answers, so their disagreements are a short list of the answers worth reading. That list,
+not the judge's score, is how the judge is used here.
+
+### Single search: answers on the first 30 questions (hybrid, top 5 passages)
+
 
 | | Gemini 3.1 Flash-Lite (API) | Qwen3-Coder 30B-A3B (local, LM Studio, Q4_K_M) |
 |---|---|---|
@@ -70,7 +169,7 @@ Measured with [`evaluate.py`](evaluate.py) on 30 questions with known answers
 \* A lower bound: checking by hand, two of Qwen's "wrong" citations point to Results
 passages that do contain the answer but aren't in the question's hand-made evidence list.
 
-### Retrieval: vector vs keyword vs hybrid
+### Retrieval: vector vs keyword vs hybrid (first 30 questions)
 
 | | Vector (cosine) | Keyword (full-text) | **Hybrid (RRF)** |
 |---|---|---|---|
@@ -98,7 +197,7 @@ What the numbers say:
 - **Fusion can also hurt**: for L11 ("60.9 months") full-text search ranks the passage 1st,
   vector search not even in its top 20, so RRF - which rewards passages both methods
   agree on - puts it 5th, and at top 3 it is lost again.
-- **Two-paper questions fail in every mode.** All five slots go to the paper that matches the
+- **Two-paper questions fail in every mode** (the agent above fixes most). All five slots go to the paper that matches the
   question best and the second paper never makes the cut - a retrieval-design problem
   (diversity / splitting the question), not a ranking one. Gemini then refuses. Qwen doesn't
   use the refusal sentence: for M1 it names the tracer for one study and says the other is
@@ -179,8 +278,17 @@ is kept in `results/` with the 2026-11-01 date.
 - **Full-text query with OR, not AND.** Postgres' `plainto_tsquery` requires every word of a
   question to appear in a passage, which almost never happens for a whole question; joining
   the words with OR and letting `ts_rank` reward passages with more (and rarer) matches works.
-- **Keyword scoring with manual review** instead of an LLM judge: with 30 questions, reading
-  the flagged answers is faster and more reliable than validating a judge.
+- **Agent tools contain no LLM.** `search` and `search_paper` are plain database queries;
+  only the agent loop calls the model. Every passage keeps the `[n]` it got when first found,
+  so citations stay valid across several searches, and a passage found again is reported as
+  "already shown" instead of being re-sent.
+- **Refusal as a tool, rules in code.** `cannot_answer(reason)` makes a refusal structured
+  rather than a sentence to pattern-match; searching before answering is checked by the loop,
+  not just asked for in the prompt; after 6 steps the tools are withdrawn so it must answer.
+- **Keyword rules first, LLM judge second.** The rules are fast, free and repeatable, and
+  were reviewed by hand; the judge runs separately on saved answers, with its own model
+  settings (`JUDGE_*`), and is checked against the rules and by reading the disagreements
+  instead of being trusted.
 
 ## Lessons learned
 
@@ -219,6 +327,17 @@ Things that only showed up by measuring, and what was done about them:
   as correct. Answers whose supporting passages were never retrieved are now scored
   **unsupported**, and refusals are no longer scored for facts (a refusal that explains what
   it *did* find used to show "1/1 facts").
+- **Prompt rules are suggestions.** The local model sometimes answered - even unanswerable
+  questions - from its own knowledge without calling a tool, despite the prompt saying it
+  must search first. Enforcing it in the loop (send the answer back once, with an
+  instruction to search) fixed it completely; the prompt alone never did.
+- **An agent that reads more finds gaps in the test set.** Because the agent sees more
+  passages, it surfaced correct answers backed by passages that weren't in the evidence
+  lists (L4, M3, M7). Each was checked to belong to the right paper before being added, and
+  saved runs were re-scored without new LLM calls (`--rescore`).
+- **Free tiers shape the method.** A judge with 20 requests a day, minutes per call and
+  frequent overload errors led to batching answers, saving after every batch, stopping
+  (not retrying) on timeouts and overloads - and, in the end, to a lighter judge model.
 
 ## Build and run
 
@@ -253,7 +372,15 @@ python evaluate.py --retrieval-only
 python evaluate.py --retrieval-only --retrieval vector
 python evaluate.py
 
-:: 7. run the API, then open http://127.0.0.1:8000/docs
+:: 7. the agent: one question, then the evaluation (LM Studio: context length >= 16384)
+python agent.py --check-tools
+python agent.py "Which amyloid PET tracer did both the Beijing study and the ADNI analysis use?" --show-trace
+python evaluate.py --mode agent
+
+:: 8. a second opinion from the judge (JUDGE_MODEL / JUDGE_API_KEY in .env)
+python judge.py results\eval_<model>_hybrid_agent_<timestamp>.json --batch 4
+
+:: 9. run the API, then open http://127.0.0.1:8000/docs
 uvicorn api:app --reload
 
 :: when done: stop the database (keeps the data; "down -v" would delete it)
@@ -268,11 +395,13 @@ ruff check .
 pytest
 ```
 
-132 tests cover the parser (including a PDF generated on the fly with a running header,
+173 tests cover the parser (including a PDF generated on the fly with a running header,
 page numbers and a reference list), the chunker (size cap with overlap, front-matter and
 boilerplate filtering, paragraphs split across pages), Reciprocal Rank Fusion and the search
-modes, citation parsing, the LLM client, the evaluator's scoring, the API endpoints and error
-codes, and the format of `eval_questions.jsonl`. Most need no database, LLM, embedding model or
+modes, the per-paper cap, citation parsing, the LLM client, the agent loop (with a scripted
+fake LLM: tool errors, refusals, the search-first rule, the step limit, rate-limit retries),
+the evaluator's scoring and re-scoring, the judge (batching, reply parsing, resuming after a
+quota stop), the API endpoints and error codes, and the format of `eval_questions.jsonl`. Most need no database, LLM, embedding model or
 PDFs - those are faked. The full-text and hybrid SQL is tested against a real Postgres +
 pgvector, in a throwaway schema; those tests run when `TEST_DATABASE_URL` is set
 (`set TEST_DATABASE_URL=postgresql://rag:rag@localhost:5433/rag` with the Docker database up)
@@ -390,11 +519,15 @@ not medical advice.
 
 Limitations:
 
-- **Small test set.** 30 questions, written from the papers' text and checked against it
+- **Small test set.** 38 questions, written from the papers' text and checked against it
   rather than by a domain expert; differences of one or two questions are within noise, and
-  the full-text settings were chosen on the same set. Answer scoring is keyword-based and was
-  reviewed by hand.
-- **Questions spanning two papers fail**: retrieval fills all slots from one paper.
+  the full-text settings were chosen on the same set. Answer scoring is keyword-based, with
+  an LLM judge as a second opinion and the disagreements read by hand.
+- **Two-paper questions need the agent**: the single-search pipeline (and the API) still
+  fills all slots from one paper; the agent fixes most of them at ~2x the LLM calls, and is
+  only available from the command line and the evaluator so far.
+- **The judge is a lite model, not validated beyond these runs**: lenient, and from the same
+  family as one of the answering models.
 - **Ranking**: even with hybrid search the answer passage is ranked first for 14 of 24
   questions.
 - **Tables and formulas** are flattened to text; some symbols are lost (`�`).
@@ -404,11 +537,10 @@ Limitations:
 
 Roadmap:
 
-1. **Multi-paper retrieval**: cap the passages per paper so a second paper gets a slot, or
-   split a question into one search per study; M1/M2 measure it.
+1. **Agent mode in the API** (`POST /ask` with `"mode": "agent"`), returning the tool trace.
 2. **Reranker**: a cross-encoder over the fused top 20 to improve ranking further.
-3. **LLM judge / faithfulness check** next to keyword scoring, to catch answers like Qwen's
-   L6 that have the right number with a wrong detail attached.
+3. **A stronger judge** (outside the free tier), validated on a larger set of hand-labelled
+   answers.
 4. **Questions from someone who knows the field**, including more near-miss unanswerable ones.
 
 ## Repository layout
@@ -420,11 +552,13 @@ Roadmap:
 ├── search.py              retrieval (+ CLI)
 ├── answer.py              retrieval + LLM answer with citations (+ CLI)
 ├── api.py                 FastAPI app
-├── evaluate.py            evaluation runner
-├── eval_questions.jsonl   30 test questions with expected answers and evidence passages
+├── agent.py               tool-using agent: search / search_paper / cannot_answer (+ CLI)
+├── evaluate.py            evaluation runner (pipeline or agent; --rescore)
+├── judge.py               LLM judge over saved results
+├── eval_questions.jsonl   38 test questions with expected answers and evidence passages
 ├── tests/                 pytest suite (no database / LLM / model needed)
 ├── .github/workflows/     CI: ruff + pytest on Python 3.11, 3.13, 3.14
-├── results/               evaluation outputs (all answers, per-question scores)
+├── results/               evaluation outputs (all answers, per-question scores, judge verdicts)
 ├── docs/images/           screenshots used in this README
 ├── docker-compose.yml     Postgres 16 + pgvector
 ├── .env.example           LLM / database settings template
@@ -449,11 +583,15 @@ above.
 This project was built with Claude (Anthropic) as a coding assistant. Claude wrote most of
 the Python code and the first draft of this README, and drafted the 30 evaluation questions
 from the papers, checking each expected answer against the extracted text;
-I then reviewed the questions, answers and evidence passages.
+I then reviewed the questions, answers and evidence passages. For the agent stage Claude
+also wrote the agent loop, the judge and their tests, drafted the 8 added two-paper
+questions and the review of the judge's disagreements, which I checked against the answers.
 I defined the project and its scope, chose the papers, set up and ran the whole stack on my own machine
 (Docker/pgvector, LM Studio, the Gemini API), ran every pipeline step and evaluation, fed the
 outputs and errors back into the iterations, and made the project decisions - removing the
-duplicate preprint, comparing a local and a cloud model, and how the repository is organised.
+duplicate preprint, comparing a local and a cloud model, moving from a single search to an
+agent, keeping the judge as a second opinion, choosing the judge model within the free tier,
+and how the repository is organised.
 The problems described under [Lessons learned](#lessons-learned) were found by running each
 step and inspecting its output.
 
