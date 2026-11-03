@@ -40,7 +40,7 @@ flowchart LR
 | Embed & store | [`embed_store.py`](embed_store.py) | Embeds with `BAAI/bge-small-en-v1.5` (local, 384 dims) and upserts into Postgres/pgvector with an HNSW index; adds a full-text column (`tsvector`, GIN index); keeps the table identical to `chunks.jsonl` |
 | Retrieve | [`search.py`](search.py) | Three modes: `vector` (cosine similarity), `keyword` (Postgres full-text) and `hybrid` (default: both, merged with Reciprocal Rank Fusion); also a CLI to inspect retrieval on its own |
 | Answer | [`answer.py`](answer.py) | Numbers the retrieved passages, instructs the LLM to answer only from them and cite `[n]`, or reply that the papers don't contain the answer |
-| Serve | [`api.py`](api.py) | FastAPI: `POST /ask`, `GET /search`, `GET /health`, Swagger UI at `/docs` |
+| Serve | [`api.py`](api.py), [`auth.py`](auth.py) | FastAPI: `POST /ask`, `GET /search`, `GET /health`, Swagger UI at `/docs`; API keys with scopes (`search`, `ask`), stored only as hashes |
 | Agent | [`agent.py`](agent.py) | The LLM gets tools instead of fixed passages - `search` (all papers), `search_paper` (one paper), `cannot_answer` - and decides what to search, up to 6 steps; passages keep their `[n]` number across searches |
 | Evaluate | [`evaluate.py`](evaluate.py) | Runs the test questions through the pipeline or the agent; scores retrieval (hit@k, MRR), answers, citations and refusals per question type |
 | Judge | [`judge.py`](judge.py) | After a run: a separate LLM grades every saved answer against the reference and the passages it cites, and lists where it disagrees with the keyword scoring |
@@ -289,6 +289,14 @@ is kept in `results/` with the 2026-11-01 date.
   were reviewed by hand; the judge runs separately on saved answers, with its own model
   settings (`JUDGE_*`), and is checked against the rules and by reading the disagreements
   instead of being trusted.
+- **API keys with scopes, stored as hashes.** `/search` and `/ask` need a key in the
+  `X-API-Key` header; each key has the scopes it may use (`search` is retrieval only, `ask`
+  also calls the LLM, which costs quota or money), so a demo key can search without spending
+  anything. Missing or unknown keys get 401, a key without the scope 403. The key file holds
+  only SHA-256 hashes - enough for random 256-bit keys, unlike human passwords, which need a
+  slow salted hash - compared in constant time; requests are logged with the key's name,
+  never the key. This is simple key-based access control, not a full identity system (no
+  users, expiry or rate limits).
 
 ## Lessons learned
 
@@ -380,7 +388,10 @@ python evaluate.py --mode agent
 :: 8. a second opinion from the judge (JUDGE_MODEL / JUDGE_API_KEY in .env)
 python judge.py results\eval_<model>_hybrid_agent_<timestamp>.json --batch 4
 
-:: 9. run the API, then open http://127.0.0.1:8000/docs
+:: 9. create an API key (printed once), run the API, open http://127.0.0.1:8000/docs
+::    and paste the key into "Authorize"
+::    (or set API_AUTH=off in .env while experimenting locally)
+python auth.py create me --scopes search,ask
 uvicorn api:app --reload
 
 :: when done: stop the database (keeps the data; "down -v" would delete it)
@@ -395,13 +406,14 @@ ruff check .
 pytest
 ```
 
-173 tests cover the parser (including a PDF generated on the fly with a running header,
+181 tests cover the parser (including a PDF generated on the fly with a running header,
 page numbers and a reference list), the chunker (size cap with overlap, front-matter and
 boilerplate filtering, paragraphs split across pages), Reciprocal Rank Fusion and the search
 modes, the per-paper cap, citation parsing, the LLM client, the agent loop (with a scripted
 fake LLM: tool errors, refusals, the search-first rule, the step limit, rate-limit retries),
 the evaluator's scoring and re-scoring, the judge (batching, reply parsing, resuming after a
-quota stop), the API endpoints and error codes, and the format of `eval_questions.jsonl`. Most need no database, LLM, embedding model or
+quota stop), the API endpoints and error codes, API keys and scopes (401/403, revocation,
+only hashes on disk), and the format of `eval_questions.jsonl`. Most need no database, LLM, embedding model or
 PDFs - those are faked. The full-text and hybrid SQL is tested against a real Postgres +
 pgvector, in a throwaway schema; those tests run when `TEST_DATABASE_URL` is set
 (`set TEST_DATABASE_URL=postgresql://rag:rag@localhost:5433/rag` with the Docker database up)
@@ -415,7 +427,9 @@ reproduces the same chunks byte for byte on Python 3.13 and 3.14.
 
 ### API
 
-The easiest way to try it is the Swagger page at `http://127.0.0.1:8000/docs`:
+Create a key first (`python auth.py create me`; it is printed once and only its hash is
+kept in `api_keys.json`). The easiest way to try it is the Swagger page at
+`http://127.0.0.1:8000/docs` - click **Authorize** and paste the key:
 
 ![Swagger UI - POST /ask](docs/images/api_swagger-ask.png)
 
@@ -424,6 +438,7 @@ From a terminal (macOS/Linux/Git Bash):
 ```bash
 curl -X POST 'http://127.0.0.1:8000/ask' \
   -H 'Content-Type: application/json' \
+  -H 'X-API-Key: rag_...your key...' \
   -d '{"question": "Is Alzheimer'\''s disease more common in men or women?", "top_k": 5}'
 ```
 
@@ -453,7 +468,19 @@ Response (shortened):
 ```
 
 `GET /search?q=...&k=5&mode=hybrid` returns the retrieved passages without calling the LLM;
-`GET /health` reports the database status and configured models. Both `/search` (`mode`) and
+`GET /health` reports the database status and configured models (no key needed). Keys:
+`python auth.py list` / `revoke <name>`; a key with only the `search` scope gets 403 from
+`/ask`:
+
+| No key: 401 | Key with only the `search` scope calling `/ask`: 403 |
+|---|---|
+| ![401 Unauthorized in Swagger](docs/images/api_swagger-401.png) | ![403 Forbidden in Swagger](docs/images/api_swagger-403-scope.png) |
+
+The server log names the key behind each request (never the key itself):
+
+![Server log: a rejected request, then one by key 'me'](docs/images/api_auth-log.png)
+
+Both `/search` (`mode`) and
 `/ask` (`"retrieval"`) accept `vector`, `keyword` or `hybrid`, defaulting to the server's
 `RETRIEVAL` setting (hybrid). Responses now also report the `retrieval` mode used; the score
 is a cosine similarity, a `ts_rank` or an RRF score depending on the mode - only the order
@@ -472,6 +499,7 @@ matters. (The response above is from a vector-search run.)
 | Refusing an unanswerable question | ![](docs/images/answer_unanswerable.png) |
 | Local model answers (Qwen in LM Studio) | ![](docs/images/answer_qwen-local.png) |
 | LM Studio server | ![](docs/images/lmstudio_server.png) |
+| Swagger: entering an API key (Authorize) | ![](docs/images/api_swagger-authorize.png) |
 | Gemini models available on the free tier | ![](docs/images/gemini_list-models.png) |
 | Evaluation - retrieval only | ![](docs/images/eval_retrieval-only.png) |
 | Evaluation - Qwen | ![](docs/images/eval_qwen3-coder.png) |
@@ -538,6 +566,7 @@ Limitations:
 Roadmap:
 
 1. **Agent mode in the API** (`POST /ask` with `"mode": "agent"`), returning the tool trace.
+   Per-key rate limits would come with it: an agent question costs several LLM calls.
 2. **Reranker**: a cross-encoder over the fused top 20 to improve ranking further.
 3. **A stronger judge** (outside the free tier), validated on a larger set of hand-labelled
    answers.
@@ -552,6 +581,7 @@ Roadmap:
 ├── search.py              retrieval (+ CLI)
 ├── answer.py              retrieval + LLM answer with citations (+ CLI)
 ├── api.py                 FastAPI app
+├── auth.py                API keys with scopes (+ CLI to create / list / revoke)
 ├── agent.py               tool-using agent: search / search_paper / cannot_answer (+ CLI)
 ├── evaluate.py            evaluation runner (pipeline or agent; --rescore)
 ├── judge.py               LLM judge over saved results
