@@ -1,5 +1,7 @@
 # secrets
 .env
+api_keys.json
+api_keys.tmp
 
 # Python
 __pycache__/

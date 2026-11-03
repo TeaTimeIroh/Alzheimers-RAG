@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 import answer
 import api
+import auth
 
 ROWS = [("paper:0026", "Paper", "2026", "Tests", 12, 13, "29 regions of interest", 0.81),
         ("paper:0024", "Paper", None, None, 12, 12, "loci text", 0.79)]
@@ -28,7 +29,16 @@ class FakeConn:
 
 
 @pytest.fixture
-def client(monkeypatch):
+def keys(tmp_path, monkeypatch):
+    """A throwaway key store with one key per scope combination: {name: key}."""
+    monkeypatch.setenv("API_KEYS_FILE", str(tmp_path / "keys.json"))
+    monkeypatch.delenv("API_AUTH", raising=False)
+    return {"full": auth.create("full", ["search", "ask"]),
+            "searcher": auth.create("searcher", ["search"])}
+
+
+@pytest.fixture
+def client(monkeypatch, keys):
     state = {"db": "up"}
 
     def fake_connect(dsn, **kwargs):
@@ -60,7 +70,7 @@ def client(monkeypatch):
 
     monkeypatch.setattr(api, "search", fake_search)
     monkeypatch.setattr(answer, "ask", fake_ask)
-    with TestClient(api.app) as c:
+    with TestClient(api.app, headers={auth.HEADER: keys["full"]}) as c:
         c.state = state
         yield c
 
@@ -121,3 +131,45 @@ def test_ask_retrieval_is_passed_through_and_reported(client):
 def test_unknown_mode_is_rejected(client):
     assert client.get("/search", params={"q": "regions", "mode": "bm25"}).status_code == 422
     assert client.post("/ask", json={"question": "How many?", "retrieval": "bm25"}).status_code == 422
+
+
+# ----------------------------------------------------------------------------- access control
+@pytest.mark.parametrize("method, path, kwargs", [
+    ("get", "/search", {"params": {"q": "regions"}}),
+    ("post", "/ask", {"json": {"question": "How many regions?"}}),
+])
+def test_missing_or_wrong_key_is_401(client, method, path, kwargs):
+    no_header = TestClient(api.app)                      # same app, no default key header
+    responses = [getattr(no_header, method)(path, **kwargs)]
+    for key in ("", "rag_not-a-real-key"):
+        responses.append(getattr(client, method)(path, headers={auth.HEADER: key}, **kwargs))
+    for r in responses:
+        assert r.status_code == 401 and r.headers["www-authenticate"] == "ApiKey"
+
+
+def test_key_without_the_scope_is_403(client, keys):
+    as_searcher = {auth.HEADER: keys["searcher"]}
+    assert client.get("/search", params={"q": "regions"}, headers=as_searcher).status_code == 200
+    r = client.post("/ask", json={"question": "How many regions?"}, headers=as_searcher)
+    assert r.status_code == 403 and "'ask'" in r.json()["detail"]
+
+
+def test_revoked_key_stops_working(client, keys):
+    auth.revoke("full")
+    assert client.get("/search", params={"q": "regions"}).status_code == 401
+
+
+def test_health_and_docs_need_no_key(client):
+    assert client.get("/health", headers={auth.HEADER: ""}).status_code == 200
+    assert client.get("/openapi.json", headers={auth.HEADER: ""}).status_code == 200
+
+
+def test_auth_can_be_switched_off(client, monkeypatch):
+    monkeypatch.setenv("API_AUTH", "off")
+    assert client.post("/ask", json={"question": "How many regions?"},
+                       headers={auth.HEADER: ""}).status_code == 200
+
+
+def test_swagger_shows_the_key_scheme(client):
+    schemes = client.get("/openapi.json").json()["components"]["securitySchemes"]
+    assert any(s["type"] == "apiKey" and s["name"] == auth.HEADER for s in schemes.values())
