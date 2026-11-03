@@ -352,7 +352,21 @@ Things that only showed up by measuring, and what was done about them:
 Requirements: Python 3.11+, [Docker Desktop](https://www.docker.com/products/docker-desktop/),
 and either [LM Studio](https://lmstudio.ai/) with a chat model or a
 [Gemini API key](https://aistudio.google.com/apikey).
-Commands below are for Windows (Anaconda Prompt); on macOS/Linux use `cp` instead of `copy`.
+
+**Quick start** - after `pip install -r requirements.txt` and with Docker Desktop running and
+the PDFs in `pdfs/` (see [Data](#data)):
+
+```bat
+python run.py
+```
+
+[`run.py`](run.py) checks the requirements and says what is missing, starts the database,
+builds the index (parse → chunk → embed, skipping steps whose output is already up to date),
+creates an API key the first time, and starts the API at `http://127.0.0.1:8000/docs`.
+`python run.py check` only reports what is ready; `build` / `serve` do one half;
+`--rebuild` redoes the index. It runs the same scripts as the steps below.
+
+Step by step - commands for Windows (Anaconda Prompt); on macOS/Linux use `cp` instead of `copy`.
 
 ```bat
 :: 1. install
@@ -406,14 +420,14 @@ ruff check .
 pytest
 ```
 
-181 tests cover the parser (including a PDF generated on the fly with a running header,
+197 tests cover the parser (including a PDF generated on the fly with a running header,
 page numbers and a reference list), the chunker (size cap with overlap, front-matter and
 boilerplate filtering, paragraphs split across pages), Reciprocal Rank Fusion and the search
 modes, the per-paper cap, citation parsing, the LLM client, the agent loop (with a scripted
 fake LLM: tool errors, refusals, the search-first rule, the step limit, rate-limit retries),
 the evaluator's scoring and re-scoring, the judge (batching, reply parsing, resuming after a
 quota stop), the API endpoints and error codes, API keys and scopes (401/403, revocation,
-only hashes on disk), and the format of `eval_questions.jsonl`. Most need no database, LLM, embedding model or
+only hashes on disk), the setup script's rebuild decisions, and the format of `eval_questions.jsonl`. Most need no database, LLM, embedding model or
 PDFs - those are faked. The full-text and hybrid SQL is tested against a real Postgres +
 pgvector, in a throwaway schema; those tests run when `TEST_DATABASE_URL` is set
 (`set TEST_DATABASE_URL=postgresql://rag:rag@localhost:5433/rag` with the Docker database up)
@@ -582,6 +596,7 @@ Roadmap:
 ├── answer.py              retrieval + LLM answer with citations (+ CLI)
 ├── api.py                 FastAPI app
 ├── auth.py                API keys with scopes (+ CLI to create / list / revoke)
+├── run.py                 one-command setup: checks, database, index, API
 ├── agent.py               tool-using agent: search / search_paper / cannot_answer (+ CLI)
 ├── evaluate.py            evaluation runner (pipeline or agent; --rescore)
 ├── judge.py               LLM judge over saved results
@@ -611,11 +626,12 @@ for the paper metadata. The research itself belongs to the authors of the 19 pap
 above.
 
 This project was built with Claude (Anthropic) as a coding assistant. Claude wrote most of
-the Python code and the first draft of this README, and drafted the 30 evaluation questions
-from the papers, checking each expected answer against the extracted text;
-I then reviewed the questions, answers and evidence passages. For the agent stage Claude
-also wrote the agent loop, the judge and their tests, drafted the 8 added two-paper
-questions and the review of the judge's disagreements, which I checked against the answers.
+the Python code and the first draft of this README, and drafted the 38 evaluation questions
+from the papers (30 at first, then 8 more two-paper questions for the agent stage), checking
+each expected answer against the extracted text; I then reviewed the questions, answers and
+evidence passages against the papers. Claude also wrote the agent loop, the judge, the API
+keys, the setup script and their tests, and drafted the review of the judge's disagreements,
+which I checked against the answers.
 I defined the project and its scope, chose the papers, set up and ran the whole stack on my own machine
 (Docker/pgvector, LM Studio, the Gemini API), ran every pipeline step and evaluation, fed the
 outputs and errors back into the iterations, and made the project decisions - removing the
